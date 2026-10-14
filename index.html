@@ -422,7 +422,7 @@ function reset() {
         barrel: 0, barrelT: 0, nextBarrel: 6, hol: 0, holT: 0, nextHol: rand(3, 6), holEnd: 0, barrelEnd: 0, head: 0, turn: 0, lean: 0, th: 0, turnRate: 0, th0: 0, assist: 0, avx: 0,
         wentBack: false, rebounded: false, backT: 0, lastUpT: -9, camYaw: 0, rebound: 0, slip: 0, rollV: 0, rollTarget: 0, yawRate: 0, coil: 0, pitch: 0, topSlip: 0, lastPumpT: -9, hackSlip: 0,
         downT: -9, prevD: false, chip: false, grindT: 0, grinding: false, floating: false, foamT: 0, foamPush: 0, landT: 0, load: 0, loadSlow: 0,
-        choosing: false, chooseT: 0, autoTurn: 0, roll: 0, railKey: null, railDir: 0, fakie: false, boardOff: 0, revertT: 0, hardT: 0, prevL: false, prevR: false, size: 1, sizeT: 1, nextSet: 18, grow: 0, barrelLen: 1, barrelLenT: 1, swellMsg: 60, warm: 0, shark: null, nextShark: rand(18, 32), critters: [], nextCritter: rand(5, 9), adren: 0, flow: 0, claimT: 0, claimKind: 0, lastPopT: -9, pumpReq: false, pumpCd: 0, pumpT: 0, pumpSide: 1,
+        choosing: false, chooseT: 0, autoTurn: 0, roll: 0, railKey: null, railDir: 0, fakie: false, boardOff: 0, revertT: 0, hardT: 0, prevL: false, prevR: false, size: 1, sizeT: 1, nextSet: 18, grow: 0, barrelLen: 1, barrelLenT: 1, swellMsg: 60, warm: 0, shark: null, sharkN: 0, nextShark: rand(18, 32), critters: [], nextCritter: rand(5, 9), adren: 0, flow: 0, claimT: 0, claimKind: 0, lastPopT: -9, pumpReq: false, pumpCd: 0, pumpT: 0, pumpSide: 1,
         ay: 0, az: 0, avy: 0, avz: 0, spin: 0, grabT: 0, grabbing: false, maxH: 0 };
 }
 reset();
@@ -2253,10 +2253,13 @@ function spawnShark() {
   const sh = behind
     ? { x: S.x - Math.min(16, S.gap - 4), z: (S.u > 0.5 ? rand(0.2, 0.4) : rand(0.6, 0.85)) * D, h: 0, v: 10 }
     : { x: S.x + rand(42, 52), z: rand(0.35, 0.75) * D, h: Math.PI, v: 5, ahead: true };
-  Object.assign(sh, { t: 0, lunge: 0, passed: false, aired: false, gone: 0, close: 99 });
-  sh.mesh = makeShark(); world.add(sh.mesh);
+  // every time it comes back it's bigger, a bit quicker, and hunts you for longer
+  const n = ++S.sharkN, k = Math.min(2.6, 1 + 0.3 * (n - 1));
+  Object.assign(sh, { t: 0, lunge: 0, passed: false, aired: false, gone: 0, close: 99, n, k,
+    chase: 110 + 50 * (n - 1), lead: 70 + 20 * (n - 1), clear: 0.9 + 0.35 * (k - 1) });
+  sh.mesh = makeShark(); sh.mesh.scale.setScalar(k); world.add(sh.mesh);
   S.shark = sh;
-  msg('Shark!', sh.ahead ? 'Fin ahead: carve round it or air over it' : 'Behind you: keep your speed up and outrun it', true);
+  msg(n === 1 ? 'Shark!' : n === 2 ? "It's back, and bigger" : `Shark #${n}: even bigger`, sh.ahead ? 'Fin ahead: carve round it or air over it' : 'Behind you: keep your speed up and outrun it', true);
 }
 function updateShark(dt) {
   const sh = S.shark;
@@ -2269,38 +2272,38 @@ function updateShark(dt) {
   const dx = S.x - sh.x, dz = (S.air ? S.az : rz) - sh.z, dist = Math.hypot(dx, dz);
   if (sh.gone > 0) {   // diving away
     sh.gone += dt; sh.z += dt * 2;
-    if (sh.gone > 2.5) { world.remove(sh.mesh); S.shark = null; S.nextShark = S.t + rand(14, 28); return; }
+    if (sh.gone > 2.5) { world.remove(sh.mesh); S.shark = null; S.nextShark = S.t + rand(12, 24); return; }
   } else {
     // hunting: aim a little ahead of you, but it can only turn so fast and only sprint for a bit
     const lead = Math.min(1.2, dist / 14);
     const tx = S.x + (S.air ? S.avx : S.s * Math.cos(S.th)) * lead, tz = (S.air ? S.az : rz) + (S.air ? 0 : S.s * Math.sin(S.th)) * lead;
     const want = Math.atan2(tz - sh.z, tx - sh.x);
-    sh.h += clamp(wrap(want - sh.h), -2.4 * dt, 2.4 * dt);
+    sh.h += clamp(wrap(want - sh.h), -(2.4 + 0.15 * (sh.n - 1)) * dt, (2.4 + 0.15 * (sh.n - 1)) * dt);
     // it hunts relentlessly: it keeps pace with the wave and surges in bursts (about 3 s on, 1.5 s to recover)
     const burstOn = (sh.t % 4.5) < 3;
-    const sprint = sh.ahead && dx < 0 && dist > 10 ? 7 : burstOn && dist < 16 ? Math.max(16, S.s + 2.5) : Math.max(13, ws * 0.98);
+    const sprint = sh.ahead && dx < 0 && dist > 10 ? 7 : burstOn && dist < 16 + 3 * sh.k ? Math.max(16, S.s + 2.5) + 0.8 * (sh.n - 1) : Math.max(13, ws * 0.98);
     sh.v += (sprint - sh.v) * Math.min(1, dt * 1.5);
     sh.x += Math.cos(sh.h) * sh.v * dt;
     sh.z = clamp(sh.z + Math.sin(sh.h) * sh.v * dt, 0.6, D * 1.05);
     if (dist < sh.close) sh.close = dist;
     // airing over it
-    if (S.air && !sh.aired && dist < 2.6 && S.h > 0.9) { sh.aired = true; trick('Shark air', 800); }
+    if (S.air && !sh.aired && dist < 2.6 * sh.k && S.h > sh.clear) { sh.aired = true; trick(sh.n > 1 ? 'Big shark air' : 'Shark air', 800 + 300 * (sh.n - 1)); }
     // the bite: it breaches and takes you, barrel or not; only the air saves you
-    if (dist < 2.2 && sh.lunge <= 0 && !(S.air && S.h > 0.9)) sh.lunge = 0.001;
+    if (dist < 2.2 * sh.k && sh.lunge <= 0 && !(S.air && S.h > sh.clear)) sh.lunge = 0.001;
     if (sh.lunge > 0) {
       sh.lunge += dt;
-      if (sh.lunge > 0.18 && dist < 1.6 && !(S.air && S.h > 0.9)) { burst(sh.x, waveY(sh.x, sh.z) + 0.5, sh.z, 90, 5); return wipe('Shark!', 'It caught you. Keep your speed up, carve hard to make it overshoot, or launch over it.'); }
+      if (sh.lunge > 0.18 && dist < 1.6 * sh.k && !(S.air && S.h > sh.clear)) { burst(sh.x, waveY(sh.x, sh.z) + 0.5, sh.z, 90, 5); return wipe('Shark!', 'It caught you. Keep your speed up, carve hard to make it overshoot, or launch over it.'); }
       if (sh.lunge > 0.7) sh.lunge = -0.7;   // missed: it circles and comes again almost straight away
     } else if (sh.lunge < 0) sh.lunge = Math.min(0, sh.lunge + dt);
     // escaped: you outran it, or it gave up
-    if (dx > 60 || sh.t > 75 || sh.x < curlX - 6) {   // only a big lead, a long chase or the whitewater shakes it
+    if (dx > sh.lead || sh.t > sh.chase || sh.x < curlX - 6 - 4 * sh.n) {   // only a big lead, a very long chase or deep whitewater shakes it
       sh.gone = 0.001;
-      if (S.alive) trick(sh.close < 4 ? 'Escaped the shark' : 'Shark gave up', sh.close < 4 ? 900 : 400);
+      if (S.alive) trick(sh.close < 4 * sh.k ? 'Escaped the shark' : 'Shark gave up', (sh.close < 4 * sh.k ? 900 : 400) * sh.n);
     }
   }
   // place it: mostly under water, fin and back cutting through, breaching when it strikes
   const surf = waveY(sh.x, sh.z), br = sh.lunge > 0 ? Math.sin(Math.PI * Math.min(1, sh.lunge / 0.7)) : 0;
-  sh.mesh.position.set(sh.x, surf - 0.3 + br * 0.9 - (sh.gone > 0 ? sh.gone * 0.8 : 0), sh.z);
+  sh.mesh.position.set(sh.x, surf - 0.3 * sh.k + br * 0.9 * sh.k - (sh.gone > 0 ? sh.gone * 0.8 : 0), sh.z);
   _f.set(Math.cos(sh.h), 0.6 * br, Math.sin(sh.h)).normalize();
   orient(sh.mesh, _f, normalAt(sh.x, Math.max(0, sh.z)).lerp(UPV, 0.5).normalize());
   sh.mesh.userData.tail.rotation.y = Math.sin(sh.t * 9) * 0.35;
