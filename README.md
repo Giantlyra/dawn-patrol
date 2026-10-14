@@ -2,7 +2,7 @@
 
 A 3D surf game built with three.js — single file, runs in any modern browser.
 
-Open `index.html` to play, or visit the GitHub Pages site.
+Open `index.html` to pick a version: `v2/` is the latest, `v1/` the original line.
 
 ## Controls
 - Arrow keys / WASD: carve, pump, set your line
@@ -15,4 +15,4 @@ Open `index.html` to play, or visit the GitHub Pages site.
 - Sharks, seals, dolphins, mantas, pelicans and gulls — don't hit them
 
 ## Credits
-The tiger shark and reef rocks are CC0 scans from [Poly Haven](https://polyhaven.com) (Bronze Shark Statue, Rock 07, Rock 09, Boulder 01), reduced and repainted in Blender and embedded in `index.html`.
+The tiger shark and reef rocks are CC0 scans from [Poly Haven](https://polyhaven.com) (Bronze Shark Statue, Rock 07, Rock 09, Boulder 01), reduced and repainted in Blender and embedded in `v2/index.html`. The dolphin, seal, manta, pelican and gull were modelled in Blender for the game.
