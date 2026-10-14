@@ -109,6 +109,7 @@ kbd{font-family:var(--mono);font-size:11px;border:1px solid rgba(245,240,228,.4)
     <div class="stat"><b id="score">0</b><span>Score</span></div>
     <div class="stat"><b id="mult">×1</b><span>Combo</span></div>
     <div class="stat"><b id="goal">0</b><span id="goalLbl">To go</span></div>
+    <div class="stat" id="bitesBox" hidden><b id="bites">0/3</b><span>Bites</span></div>
     <div class="adr" id="adr"><span>Adrenaline</span><div class="bar"><i id="adrBar"></i></div><span id="lvl"></span></div>
   </div>
   <div class="grp">
@@ -415,14 +416,14 @@ const boils = [];
 function reset() {
   boils.length = 0;
   if (S) for (const o of S.obs) world.remove(o.mesh);
-  if (S && S.shark) world.remove(S.shark.mesh);
+  if (S && S.sharks) S.sharks.forEach(sh => world.remove(sh.mesh));
   if (S && S.critters) for (const c of S.critters) world.remove(c.mesh);
   S = { t: 0, x: 0, u: 0.5, vy: 0, s: 15, gap: 18, air: false, h: 0, vh: 0, rot: 0, airT: 0, airY: 0,
         score: 0, mult: 1, multT: 0, tubeT: 0, bestTube: 0, obs: [], nextObs: 40, alive: true, shake: 0,
         barrel: 0, barrelT: 0, nextBarrel: 6, hol: 0, holT: 0, nextHol: rand(3, 6), holEnd: 0, barrelEnd: 0, head: 0, turn: 0, lean: 0, th: 0, turnRate: 0, th0: 0, assist: 0, avx: 0,
         wentBack: false, rebounded: false, backT: 0, lastUpT: -9, camYaw: 0, rebound: 0, slip: 0, rollV: 0, rollTarget: 0, yawRate: 0, coil: 0, pitch: 0, topSlip: 0, lastPumpT: -9, hackSlip: 0,
         downT: -9, prevD: false, chip: false, grindT: 0, grinding: false, floating: false, foamT: 0, foamPush: 0, landT: 0, load: 0, loadSlow: 0,
-        choosing: false, chooseT: 0, autoTurn: 0, roll: 0, railKey: null, railDir: 0, fakie: false, boardOff: 0, revertT: 0, hardT: 0, prevL: false, prevR: false, size: 1, sizeT: 1, nextSet: 18, grow: 0, barrelLen: 1, barrelLenT: 1, swellMsg: 60, warm: 0, shark: null, sharkN: 0, nextShark: rand(6, 12), critters: [], nextCritter: rand(5, 9), adren: 0, flow: 0, claimT: 0, claimKind: 0, lastPopT: -9, pumpReq: false, pumpCd: 0, pumpT: 0, pumpSide: 1,
+        choosing: false, chooseT: 0, autoTurn: 0, roll: 0, railKey: null, railDir: 0, fakie: false, boardOff: 0, revertT: 0, hardT: 0, prevL: false, prevR: false, size: 1, sizeT: 1, nextSet: 18, grow: 0, barrelLen: 1, barrelLenT: 1, swellMsg: 60, warm: 0, sharks: [], sharkN: 0, bites: 0, nextShark: rand(1, 2), critters: [], nextCritter: rand(5, 9), adren: 0, flow: 0, claimT: 0, claimKind: 0, lastPopT: -9, pumpReq: false, pumpCd: 0, pumpT: 0, pumpSide: 1,
         ay: 0, az: 0, avy: 0, avz: 0, spin: 0, grabT: 0, grabbing: false, maxH: 0 };
 }
 reset();
@@ -1051,24 +1052,50 @@ function hairGeo(style, rng) {
   return g.length ? merge(g) : null;
 }
 
-function faceHairGeo(face) {
-  if (face === 'clean') return null;
-  const k = face === 'beard' ? 1.09 : 1.025;
-  const g = new THREE.SphereGeometry(1, 28, 12, Math.PI * 1.5 - 1.75, 3.5, Math.PI * 0.6, Math.PI * 0.4);
-  xf(g, 0, -0.026, -0.01, 0.068 * k, 0.092 * (face === 'beard' ? 1.08 : 1.01), 0.082 * k);
-  const parts = [g];
-  if (face === 'beard') parts.push(ell(0.026, 0.006, 0.01, 0, -0.052, -0.088, 12, 6), ell(0.03, 0.022, 0.024, 0, -0.105, -0.06, 12, 8));
-  return merge(parts);
+// where facial hair grows, 0..1 with soft edges: the jaw, chin and upper lip, never the lips, nose or upper cheeks
+function beardMask(x, y, z) {
+  const ax = Math.abs(x), sm = (a, b, v) => smooth(clamp((v - a) / (b - a), 0, 1));
+  const cheek = -0.03 + 0.5 * Math.max(0, ax - 0.048);                        // rises up the sideburns at the sides
+  let m = sm(cheek, cheek - 0.012, y) * sm(0.04, 0.025, z) * sm(-0.14, -0.128, y);
+  const lips = Math.exp(-((x / 0.0275) ** 4) - ((y + 0.0585) / 0.0145) ** 4);
+  const nose = sm(-0.041, -0.036, y) * sm(0.024, 0.017, ax);
+  const stache = Math.exp(-((x / 0.031) ** 4) - ((y + 0.0425) / 0.0042) ** 2) * sm(0.03, 0, z + 0.07);
+  m = Math.max(m * (1 - nose) * (1 - sm(0.064, 0.071, ax) * sm(-0.05, -0.036, y)), stache) * (1 - lips);   // and off the ears
+  return clamp(m, 0, 1);
+}
+// a beard is a real layer of hair lifted off the face, thicker under the chin, fading into the skin at its edges
+function faceHairGeo(face, head) {
+  if (face !== 'beard') return null;   // stubble is painted into the skin
+  const P = head.attributes.position, I = head.index, n = P.count;
+  const g = new THREE.BufferGeometry(), pos = new Float32Array(n * 3), mk = new Float32Array(n);
+  head.computeVertexNormals();
+  const N = head.attributes.normal;
+  for (let i = 0; i < n; i++) {
+    const x = P.getX(i), y = P.getY(i), z = P.getZ(i), m = mk[i] = beardMask(x, y, z);
+    const th = m * (0.0042 + 0.0045 * smooth(clamp((-0.075 - y) / 0.04, 0, 1))) - 0.0008;
+    pos[i * 3] = x + N.getX(i) * th; pos[i * 3 + 1] = y + N.getY(i) * th; pos[i * 3 + 2] = z + N.getZ(i) * th;
+  }
+  const idx = [];
+  for (let t = 0; t < I.count; t += 3) { const a = I.getX(t), b = I.getX(t + 1), c = I.getX(t + 2); if (mk[a] > 0.01 || mk[b] > 0.01 || mk[c] > 0.01) idx.push(a, b, c); }
+  // hair, not felt: a fine speckle of light and dark strands, darker and denser toward the roots at its edges
+  const col = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) {
+    const h = Math.sin(i * 12.9898 + P.getY(i) * 78.233) * 43758.5453, r = h - Math.floor(h);
+    const c = (0.55 + 0.7 * r) * (0.75 + 0.25 * mk[i]);
+    col[i * 3] = c; col[i * 3 + 1] = c * 0.97; col[i * 3 + 2] = c * 0.93;
+  }
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.BufferAttribute(col, 3)); g.setIndex(idx); g.computeVertexNormals();
+  return g;
 }
 
 // one smooth head: skull, jaw and the face pressed out of a single surface, lips tinted in the vertex colours
 const GAU = (x, y, cx, cy, sx, sy) => Math.exp(-(((x - cx) / sx) ** 2 + ((y - cy) / sy) ** 2));
-function headGeo(lipTint) {
-  const g = new THREE.SphereGeometry(1, 80, 60), P = g.attributes.position, col = new Float32Array(P.count * 3);
+function headGeo(lipTint, stubble) {
+  const g = new THREE.SphereGeometry(1, 128, 200), P = g.attributes.position, col = new Float32Array(P.count * 3);
   for (let i = 0; i < P.count; i++) {
     const dx = P.getX(i), dy = P.getY(i), dz = P.getZ(i);
     const jaw = smooth(clamp((-dy - 0.05) / 0.8, 0, 1));
-    const x = dx * 0.079 * (1 - jaw * (dz < 0.2 ? 0.2 : 0.12));
+    const x = dx * 0.079 * (1 - jaw * (dz < 0.2 ? 0.13 : 0.08));
     const y = dy * (dy > 0 ? 0.104 : 0.114) + 0.01;
     let z = dz * (dz > 0 ? 0.101 : 0.091) + 0.006;
     let lip = 0, occ = 0, warm = 0;
@@ -1084,24 +1111,26 @@ function headGeo(lipTint) {
       h += 0.006 * (GAU(x, y, 0.013, -0.027, 0.008, 0.006) + GAU(x, y, -0.013, -0.027, 0.008, 0.006));  // nostril wings
       h += 0.007 * (GAU(x, y, 0.046, -0.012, 0.018, 0.014) + GAU(x, y, -0.046, -0.012, 0.018, 0.014)); // cheekbones
       const bow = 1 + 0.35 * (GAU(x, y, 0.0075, -0.0465, 0.005, 0.004) + GAU(x, y, -0.0075, -0.0465, 0.005, 0.004));   // cupid's bow
-      const up = GAU(x, y, 0, -0.051, 0.02, 0.006) * bow, lo = GAU(x, y, 0, -0.064, 0.018, 0.0075);
+      const up = Math.exp(-((x / 0.025) ** 4) - ((y + 0.0515) / 0.0058) ** 2) * bow, lo = Math.exp(-((x / 0.022) ** 4) - ((y + 0.0645) / 0.0072) ** 2);   // lips with a defined edge at the corners
       h -= 0.0025 * GAU(x, y, 0, -0.04, 0.0035, 0.006);                                                 // philtrum groove
       h -= 0.0025 * (GAU(x, y, 0.024, -0.058, 0.004, 0.005) + GAU(x, y, -0.024, -0.058, 0.004, 0.005));   // mouth corners
       h -= 0.002 * (GAU(x, y, 0.026, -0.036, 0.004, 0.014) + GAU(x, y, -0.026, -0.036, 0.004, 0.014));    // smile lines
       h += 0.0075 * up + 0.0085 * lo - 0.003 * GAU(x, y, 0, -0.0575, 0.021, 0.0016);                  // lips and the line between
       h -= 0.004 * GAU(x, y, 0, -0.08, 0.02, 0.007);                                                   // under the lip
-      h += 0.008 * GAU(x, y, 0, -0.106, 0.022, 0.016);                                                 // chin
+      h += 0.008 * GAU(x, y, 0, -0.106, 0.03, 0.016);                                                  // chin
       h -= 0.003 * (GAU(x, y, 0.052, -0.05, 0.02, 0.02) + GAU(x, y, -0.052, -0.05, 0.02, 0.02));       // hollow of the cheeks
       z -= h * f;
-      lip = Math.min(1, (up + lo) * 1.6) * f;
+      // the colour of the lips stops at a crisp border (the shape underneath stays soft)
+      const lipC = Math.exp(-((x / 0.0245) ** 4) - ((y + 0.0515) / 0.0052) ** 4) * (1 + 0.15 * (bow - 1)) + Math.exp(-((x / 0.0215) ** 4) - ((y + 0.0648) / 0.0068) ** 4);
+      lip = Math.min(1, lipC * 1.15) * f;
       // baked shading: the creases and hollows a face holds in shadow, and the warmth in cheeks and nose
       occ = f * Math.min(0.55, 0.32 * sock + 0.5 * (GAU(x, y, 0.009, -0.031, 0.004, 0.003) + GAU(x, y, -0.009, -0.031, 0.004, 0.003))
-        + 0.6 * GAU(x, y, 0, -0.0575, 0.02, 0.0015) + 0.25 * (GAU(x, y, 0.023, -0.058, 0.004, 0.004) + GAU(x, y, -0.023, -0.058, 0.004, 0.004))
-        + 0.12 * GAU(x, y, 0, -0.04, 0.008, 0.006) + 0.14 * GAU(x, y, 0, -0.078, 0.016, 0.005));
+        + 0.85 * Math.exp(-((x / 0.024) ** 4) - ((y + 0.0575) / 0.0012) ** 2) + 0.25 * (GAU(x, y, 0.023, -0.058, 0.004, 0.004) + GAU(x, y, -0.023, -0.058, 0.004, 0.004))
+        + 0.04 * GAU(x, y, 0, -0.04, 0.008, 0.006) + 0.14 * GAU(x, y, 0, -0.078, 0.016, 0.005));
       warm = f * (0.07 * (GAU(x, y, 0.042, -0.02, 0.017, 0.015) + GAU(x, y, -0.042, -0.02, 0.017, 0.015)) + 0.06 * GAU(x, y, 0, -0.026, 0.008, 0.008));
     }
     P.setXYZ(i, x, y, z);
-    const sh = 1 - occ;
+    const sh = (1 - occ) * (stubble ? 1 - 0.38 * beardMask(x, y, z) : 1);   // stubble: a shadow of hair in the skin
     col[i * 3] = (1 - lip * (1 - lipTint.r)) * sh * (1 + warm); col[i * 3 + 1] = (1 - lip * (1 - lipTint.g)) * sh * (1 - warm * 0.4); col[i * 3 + 2] = (1 - lip * (1 - lipTint.b)) * sh * (1 - warm * 0.5);
   }
   g.setAttribute('color', new THREE.BufferAttribute(col, 3));
@@ -1246,11 +1275,11 @@ function dressSurfer(g, r) {
     s: new THREE.MeshStandardMaterial({ color: suitC, roughness: 0.72, metalness: 0, map: SEAMS, bumpMap: NEO, bumpScale: 0.0012, envMap: ENV, envMapIntensity: 0.3 }),   // neoprene
     b: new THREE.MeshStandardMaterial({ color: r.wear === 'vest' ? tone(suitC, 0.5, '#1f2633', 0.55) : tone(suitC, 1), roughness: 0.7, envMap: ENV, envMapIntensity: 0.35 }),   // boardshorts
     h: new THREE.MeshStandardMaterial({ color: hairC, roughness: 0.55, metalness: 0, envMap: ENV, envMapIntensity: 0.35, side: THREE.DoubleSide }),
-    eye: new THREE.MeshPhysicalMaterial({ color: 0xb4aa9c, roughness: 0.3, clearcoat: 1, clearcoatRoughness: 0.05, envMap: ENV, envMapIntensity: 0.5 }),
+    eye: new THREE.MeshPhysicalMaterial({ color: 0xa89b8c, roughness: 0.3, clearcoat: 1, clearcoatRoughness: 0.05, envMap: ENV, envMapIntensity: 0.5 }),
     pupil: new THREE.MeshBasicMaterial({ color: 0x050505 }),
     iris: new THREE.MeshPhysicalMaterial({ color: r.skin <= 2 && r.hairC >= 5 ? 0x4d6a7a : r.skin <= 4 ? 0x5a3c1e : 0x2e1b0e, roughness: 0.3, clearcoat: 1, clearcoatRoughness: 0.03, envMap: ENV, envMapIntensity: 1 }),
     brow: new THREE.MeshStandardMaterial({ color: tone(hairC, r.hairC >= 5 && r.hairC <= 7 ? 0.7 : 0.95), roughness: 0.8 }),
-    stub: new THREE.MeshStandardMaterial({ color: hairC, roughness: 0.85, transparent: r.face === 'stubble', opacity: r.face === 'stubble' ? 0.5 : 1, depthWrite: r.face !== 'stubble' })
+    stub: new THREE.MeshStandardMaterial({ color: hairC, roughness: 0.85, transparent: r.face === 'stubble', opacity: r.face === 'stubble' ? 0.32 : 1, depthWrite: r.face !== 'stubble' })
   };
   M.face = M.k.clone(); M.face.vertexColors = true;   // the head carries its lip tint in vertex colours
   const W8 = WEAR_MAP[r.wear], mat = i => M[W8[i]];
@@ -1308,36 +1337,68 @@ function dressSurfer(g, r) {
   body.add(R.head);
   const lipTint = new THREE.Color(skinC).lerp(new THREE.Color('#8e4646'), 0.5).multiplyScalar(0.72);
   const sk = new THREE.Color(skinC);
-  mesh(headGeo(new THREE.Color(lipTint.r / Math.max(sk.r, 0.01), lipTint.g / Math.max(sk.g, 0.01), lipTint.b / Math.max(sk.b, 0.01))), M.face, R.head);
-  // eyes: wet eyeballs set back in the sockets, iris and pupil, lids hooding the top and cupping the bottom
-  M.lid = M.k.clone(); M.lid.color.multiplyScalar(0.8);   // the upper lid sits in shadow, with the lash line along its edge
+  const headM = mesh(headGeo(new THREE.Color(lipTint.r / Math.max(sk.r, 0.01), lipTint.g / Math.max(sk.g, 0.01), lipTint.b / Math.max(sk.b, 0.01)), r.face === 'stubble'), M.face, R.head);
+  // eyes: wet eyeballs set back in the sockets with the iris and pupil lying on the curve of the ball,
+  // and real lids: an almond opening that peaks toward the nose on top and dips toward the temple underneath
+  M.lid = M.k.clone(); M.lid.color.multiplyScalar(0.82); M.lid.side = THREE.DoubleSide;
+  M.lidLo = M.k.clone(); M.lidLo.side = THREE.DoubleSide;
+  M.lash = new THREE.MeshStandardMaterial({ color: 0x120c09, roughness: 0.7, side: THREE.DoubleSide });
+  M.cornea = new THREE.MeshPhysicalMaterial({ color: 0xffffff, roughness: 0.02, clearcoat: 1, clearcoatRoughness: 0, transparent: true, opacity: 0.12, envMap: ENV, envMapIntensity: 1.4 });
+  const ER = 0.0118, EY = 0.012, EZ = -0.066;
+  const cap = (r, ang, ex) => xf(new THREE.SphereGeometry(r, 28, 6, 0, Math.PI * 2, 0, ang), ex, EY, EZ, 1, 1, 1, -Math.PI / 2, 0, 0);
+  const lidGeo = (sx, upper, r0, t0, t1) => {
+    // a sheet over the ball from the lid margin back into the socket; (a, b) = across and up the ball
+    const NA = 26, NT = 7, pos = [], idx = [];
+    for (let i = 0; i <= NA; i++) for (let j = 0; j <= NT; j++) {
+      const a = -1.45 + 2.9 * i / NA, m = a * -sx, t = t0 + (t1 - t0) * j / NT;   // m > 0 toward the nose
+      const open = Math.max(0, Math.cos(Math.min(1, Math.abs(a) / 1.1) * Math.PI / 2));
+      const edge = upper ? -0.08 + 0.5 * open * (1 + 0.12 * m) : 0.06 - 0.47 * open * (1 - 0.1 * m);
+      const b = upper ? edge + t * (1.75 - edge) : edge - t * (1.75 + edge);
+      const r = r0 + 0.0007 * Math.exp(-t * 14);   // the rounded margin stands a touch proud of the ball
+      pos.push(sx * 0.03 + r * Math.sin(a) * Math.cos(b), EY + r * Math.sin(b), EZ - r * Math.cos(a) * Math.cos(b));
+    }
+    for (let i = 0; i < NA; i++) for (let j = 0; j < NT; j++) { const k = i * (NT + 1) + j; idx.push(k, k + 1, k + NT + 1, k + 1, k + NT + 2, k + NT + 1); }
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx); g.computeVertexNormals(); return g;
+  };
   for (const sx of [1, -1]) {
-    mesh(ell(0.0118, 0.0118, 0.0118, sx * 0.03, 0.012, -0.066, 20, 16), M.eye, R.head);
-    mesh(ell(0.0062, 0.0062, 0.0024, sx * 0.03, 0.012, -0.0772, 18, 10), M.iris, R.head);
-    mesh(ell(0.0027, 0.0027, 0.0012, sx * 0.03, 0.012, -0.0792, 12, 6), M.pupil, R.head);
-    mesh(xf(new THREE.SphereGeometry(0.0129, 22, 10, 0, Math.PI * 2, 0, Math.PI * 0.47), sx * 0.03, 0.012, -0.066, 1, 1, 1, -0.3, 0, 0), M.lid, R.head);
-    mesh(xf(new THREE.SphereGeometry(0.0127, 22, 8, 0, Math.PI * 2, Math.PI * 0.7, Math.PI * 0.3), sx * 0.03, 0.012, -0.066, 1, 1, 1, 0.22, 0, 0), M.k, R.head);
+    const ex = sx * 0.03;
+    mesh(ell(ER, ER, ER, ex, EY, EZ, 24, 18), M.eye, R.head);
+    mesh(cap(ER + 0.00012, 0.5, ex), M.iris, R.head);
+    mesh(cap(ER + 0.00024, 0.2, ex), M.pupil, R.head);
+    mesh(ell(ER * 1.04, ER * 1.04, ER * 1.04, ex, EY, EZ - 0.0004, 20, 14), M.cornea, R.head);
+    mesh(lidGeo(sx, true, ER + 0.0011, 0, 1), M.lid, R.head);
+    mesh(lidGeo(sx, true, ER + 0.0019, 0, 0.07), M.lash, R.head);   // the lash line along the upper margin
+    mesh(lidGeo(sx, false, ER + 0.0009, 0, 1), M.lidLo, R.head);
   }
-  // brows: tapered, arched hair lying on the brow ridge (thick at the inside, thin at the tail)
+  // brows: one soft tapered band of hair lying on the brow ridge, thick at the inside and fading to a fine tail
   {
     const hp = R.head.children[0].geometry.attributes.position, surfZ = (x, y) => {
       let best = 1e9, bz = -0.09;
       for (let i = 0; i < hp.count; i++) { const vz = hp.getZ(i); if (vz > -0.03) continue; const d = (hp.getX(i) - x) ** 2 + (hp.getY(i) - y) ** 2; if (d < best) { best = d; bz = vz; } }
       return bz;
     };
-    const parts = [];
-    for (const sx of [1, -1]) for (let k = 0; k < 18; k++) {
-      const t = k / 17, x = sx * (0.013 + 0.04 * t), y = 0.027 + 0.008 * Math.sin(Math.PI * Math.pow(t, 0.75)) - 0.003 * t;
-      const ry = 0.0032 * (1 - 0.6 * t), slope = sx * 0.008 * Math.PI * 0.75 * Math.cos(Math.PI * Math.pow(t, 0.75)) / 0.04;
-      parts.push(xf(new THREE.SphereGeometry(1, 10, 6), x, y, surfZ(x, y) - 0.0007, 0.0058, ry, 0.0011, 0, 0, Math.atan(slope) * 0.8));
+    M.brow.side = THREE.DoubleSide;
+    const pos = [], idx = [], N = 22;
+    for (const sx of [1, -1]) {
+      const base = pos.length / 3;
+      for (let k = 0; k <= N; k++) {
+        const t = k / N, x = sx * (0.012 + 0.042 * t), y = 0.026 + 0.008 * Math.sin(Math.PI * Math.pow(t, 0.7)) - 0.004 * t;
+        const w = 0.0068 * (1 - 0.7 * t) * (0.55 + 0.45 * smooth(Math.min(1, t / 0.15)));
+        for (const e of [-0.5, 0, 0.5]) {
+          const yy = y + e * w + (e > 0 ? 0.0006 * (1 - t) : 0);   // the inner end brushes up a little
+          pos.push(x, yy, Math.min(surfZ(x, yy), surfZ(x + 0.002, yy), surfZ(x - 0.002, yy)) - (e === 0 ? 0.0018 : 0.0011));
+        }
+      }
+      for (let k = 0; k < N; k++) for (let e = 0; e < 2; e++) { const a = base + k * 3 + e; idx.push(a, a + 3, a + 1, a + 1, a + 3, a + 4); }
     }
-    mesh(merge(parts), M.brow, R.head);
+    const bg = new THREE.BufferGeometry(); bg.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); bg.setIndex(idx); bg.computeVertexNormals();
+    mesh(bg, M.brow, R.head);
   }
   const rng = seeded(1 + HAIRS.findIndex(h => h[0] === r.hair) * 97);
   const hg = hairGeo(r.hair, rng);
   if (hg) mesh(hg, M.h, R.head);
-  const fh = faceHairGeo(r.face);
-  if (fh) mesh(fh, M.stub, R.head);
+  const fh = faceHairGeo(r.face, headGeo(new THREE.Color(1, 1, 1), false));
+  if (fh) { M.stub.vertexColors = true; M.stub.roughness = 1; mesh(fh, M.stub, R.head); }
   ud.body = body; ud.rig = R; ud.curvy = curvy; ud.shW = shW;
   body.traverse(o => { if (o.isMesh) { o.frustumCulled = false; o.castShadow = true; o.receiveShadow = true; } });
   poseRig(g);
@@ -1810,7 +1871,8 @@ function addScore(p) {
 // the next level just starts: the swell builds, the hazards come in, and you keep riding
 function startStage() {
   if (LV.tube) { S.nextBarrel = S.t + 3; S.nextHol = 1e9; }
-  if (!LV.sharks && S.shark) { world.remove(S.shark.mesh); S.shark = null; }
+  if (!LV.sharks) { S.sharks.forEach(sh => world.remove(sh.mesh)); S.sharks = []; }
+  else S.nextShark = S.t + rand(1, 2);   // a shark level starts with one on you straight away
 }
 function clearStage() {
   const next = stageIdx + 1;
@@ -2248,40 +2310,74 @@ function updateCritters(dt) {
 }
 
 function spawnShark() {
-  // usually it comes up behind you on the open face and hunts you down the line; sometimes it's waiting ahead
-  const behind = S.gap > 9 && Math.random() < 0.7;
+  // mostly they come up behind you on the open face and hunt you down the line; now and then one is waiting ahead
+  const behind = Math.random() < 0.85;
+  if (behind && S.gap < 6) { S.nextShark = S.t + 0.8; return; }   // no room behind you yet: try again in a moment
+  const others = S.sharks.length, zs = (S.u > 0.5 ? rand(0.2, 0.4) : rand(0.6, 0.85)) * D;
   const sh = behind
-    ? { x: S.x - Math.min(16, S.gap - 4), z: (S.u > 0.5 ? rand(0.2, 0.4) : rand(0.6, 0.85)) * D, h: 0, v: 10 }
+    ? { x: S.x - Math.min(16, S.gap - 4) + rand(-2, 2), z: others ? clamp(zs + (Math.random() < 0.5 ? -1 : 1) * rand(3, 6), 0.8, D) : zs, h: 0, v: 10 }
     : { x: S.x + rand(42, 52), z: rand(0.35, 0.75) * D, h: Math.PI, v: 5, ahead: true };
-  // every time it comes back it's bigger, a bit quicker, and hunts you for longer
+  // every time one comes back it's bigger, a bit quicker, hunts you for longer, and soon learns to dodge the rocks
   const n = ++S.sharkN, k = Math.min(2.6, 1 + 0.3 * (n - 1));
-  Object.assign(sh, { t: 0, lunge: 0, passed: false, aired: false, gone: 0, close: 99, n, k,
+  Object.assign(sh, { t: 0, lunge: 0, passed: false, aired: false, gone: 0, close: 99, n, k, stun: 0,
     chase: 110 + 50 * (n - 1), lead: 70 + 20 * (n - 1), clear: 0.9 + 0.35 * (k - 1) });
   sh.mesh = makeShark(); sh.mesh.scale.setScalar(k); world.add(sh.mesh);
-  S.shark = sh;
-  msg(n === 1 ? 'Shark!' : n === 2 ? "It's back, and bigger" : `Shark #${n}: even bigger`, sh.ahead ? 'Fin ahead: carve round it or air over it' : 'Behind you: keep your speed up and outrun it', true);
+  S.sharks.push(sh);
+  S.nextShark = S.t + rand(9, 16);   // the next one joins the hunt if there's room for it
+  const many = S.sharks.length > 1 ? ` (${S.sharks.length} on you)` : '';
+  msg((n === 1 ? 'Shark!' : n === 2 ? "Another one, and it's bigger" : `Shark #${n}: even bigger`) + many, sh.ahead ? 'Fin ahead: carve round it or air over it' : 'Behind you: keep your speed up and outrun it', true);
 }
+function biteFlash() {
+  let f = document.getElementById('biteFx');
+  if (!f) { f = document.createElement('div'); f.id = 'biteFx'; f.style.cssText = 'position:fixed;inset:0;pointer-events:none;background:radial-gradient(ellipse at center,transparent 35%,rgba(170,0,0,.75));opacity:0;transition:opacity .9s ease-out;z-index:5'; document.body.appendChild(f); }
+  f.style.transition = 'none'; f.style.opacity = '1';
+  requestAnimationFrame(() => requestAnimationFrame(() => { f.style.transition = 'opacity .9s ease-out'; f.style.opacity = '0'; }));
+}
+function maxSharks() { return LV.tube ? 2 : Math.min(3, 1 + Math.floor(S.t / 35)); }   // one to start, then the pack grows
 function updateShark(dt) {
-  const sh = S.shark;
-  if (!sh) {
-    if (S.t > S.nextShark && !S.choosing && LV.sharks) spawnShark();
-    return;
+  if (S.t > S.nextShark && !S.choosing && LV.sharks && S.sharks.length < maxSharks()) spawnShark();
+  for (let i = S.sharks.length - 1; i >= 0; i--) if (updateOneShark(S.sharks[i], dt) === 'gone') {
+    world.remove(S.sharks[i].mesh); S.sharks.splice(i, 1);
+    S.nextShark = Math.min(S.nextShark, S.t + rand(4, 9));
   }
+}
+function updateOneShark(sh, dt) {
   sh.t += dt;
   const ws = waveSpeed(), rz = S.u * D;
   const dx = S.x - sh.x, dz = (S.air ? S.az : rz) - sh.z, dist = Math.hypot(dx, dz);
   if (sh.gone > 0) {   // diving away
     sh.gone += dt; sh.z += dt * 2;
-    if (sh.gone > 2.5) { world.remove(sh.mesh); S.shark = null; S.nextShark = S.t + rand(4, 9); return; }
+    if (sh.gone > 2.5) return 'gone';
   } else {
     // hunting: aim a little ahead of you, but it can only turn so fast and only sprint for a bit
     const lead = Math.min(1.2, dist / 14);
     const tx = S.x + (S.air ? S.avx : S.s * Math.cos(S.th)) * lead, tz = (S.air ? S.az : rz) + (S.air ? 0 : S.s * Math.sin(S.th)) * lead;
-    const want = Math.atan2(tz - sh.z, tx - sh.x);
-    sh.h += clamp(wrap(want - sh.h), -(2.4 + 0.15 * (sh.n - 1)) * dt, (2.4 + 0.15 * (sh.n - 1)) * dt);
+    let want = Math.atan2(tz - sh.z, tx - sh.x);
+    // the rocks: a young shark swims straight into them; after a while (and every one after the first) it steers round
+    const smart = sh.n > 1 || sh.t > 15, ch = Math.cos(sh.h), shh = Math.sin(sh.h);
+    for (const o of S.obs) {
+      const ox = o.x - sh.x, oz = o.u * D - sh.z, od = Math.hypot(ox, oz), rr = o.rx * 1.25 + 0.5 * sh.k;
+      if (od > 14) continue;
+      if (smart) {
+        const ahead = ox * ch + oz * shh, lat = -ox * shh + oz * ch;
+        if (ahead > -rr && Math.abs(lat) < rr + 1.5) want = sh.h - Math.sign(lat || 1) * 1.3 * (1 - od / 14);
+      } else if (od < rr && sh.stun <= 0) {
+        sh.stun = 1.6; sh.v = 1; sh.lunge = 0; sh.h += Math.PI * 0.7;
+        burst(sh.x, waveY(sh.x, sh.z) + 0.3, sh.z, 50, 4);
+        if (S.alive && dist < 30) trick('Shark hit the reef', 300);
+      }
+    }
+    if (sh.stun > 0) sh.stun -= dt;
+    // a pack spreads out instead of stacking up on one line
+    for (const o of S.sharks) if (o !== sh && o.gone <= 0) {
+      const sx = sh.x - o.x, sz = sh.z - o.z, sd = Math.hypot(sx, sz);
+      if (sd < 3 * sh.k && sd > 0.01) { sh.x += sx / sd * dt * 3; sh.z += sz / sd * dt * 3; }
+    }
+    const turn = (2.4 + 0.15 * (sh.n - 1)) * (sh.stun > 0 ? 0.4 : 1);
+    sh.h += clamp(wrap(want - sh.h), -turn * dt, turn * dt);
     // it hunts relentlessly: it keeps pace with the wave and surges in bursts (about 3 s on, 1.5 s to recover)
-    const burstOn = (sh.t % 4.5) < 3;
-    const sprint = sh.ahead && dx < 0 && dist > 10 ? 7 : burstOn && dist < 16 + 3 * sh.k ? Math.max(16, S.s + 2.5) + 0.8 * (sh.n - 1) : Math.max(13, ws * 0.98);
+    const burstOn = sh.t > 4 && (sh.t % 4.5) < 3;   // it stalks for a few seconds before the first surge
+    const sprint = sh.stun > 0 ? 3 : sh.ahead && dx < 0 && dist > 10 ? 7 : burstOn && dist < 16 + 3 * sh.k ? Math.max(16, S.s + 2.5) + 0.8 * (sh.n - 1) : Math.max(13, ws * 0.98);
     sh.v += (sprint - sh.v) * Math.min(1, dt * 1.5);
     sh.x += Math.cos(sh.h) * sh.v * dt;
     sh.z = clamp(sh.z + Math.sin(sh.h) * sh.v * dt, 0.6, D * 1.05);
@@ -2289,10 +2385,19 @@ function updateShark(dt) {
     // airing over it
     if (S.air && !sh.aired && dist < 2.6 * sh.k && S.h > sh.clear) { sh.aired = true; trick(sh.n > 1 ? 'Big shark air' : 'Shark air', 800 + 300 * (sh.n - 1)); }
     // the bite: it breaches and takes you, barrel or not; only the air saves you
-    if (dist < 2.2 * sh.k && sh.lunge <= 0 && !(S.air && S.h > sh.clear)) sh.lunge = 0.001;
+    if (dist < 2.2 * sh.k && sh.lunge <= 0 && sh.stun <= 0 && sh.t > 2.5 && !(S.air && S.h > sh.clear)) sh.lunge = 0.001;
     if (sh.lunge > 0) {
       sh.lunge += dt;
-      if (sh.lunge > 0.18 && dist < 1.6 * sh.k && !(S.air && S.h > sh.clear)) { burst(sh.x, waveY(sh.x, sh.z) + 0.5, sh.z, 90, 5); return wipe('Shark!', 'It caught you. Keep your speed up, carve hard to make it overshoot, or launch over it.'); }
+      if (sh.lunge > 0.18 && dist < 1.6 * sh.k && !(S.air && S.h > sh.clear)) {
+        // it takes a bite: you can survive a couple, but the big ones take more, and the third one ends it
+        burst(sh.x, waveY(sh.x, sh.z) + 0.5, sh.z, 90, 5);
+        S.bites += sh.k > 1.75 ? 2 : 1;
+        if (S.bites >= 3) { wipe('Shark!', 'Bitten one too many times. Keep your speed up, carve hard to make it overshoot, or launch over it.'); return; }
+        S.s *= 0.6; S.mult = 1;
+        sh.lunge = -2.5; sh.x -= 5 * Math.cos(sh.h); sh.z -= 5 * Math.sin(sh.h);   // it lets go and drops back before coming again
+        biteFlash();
+        msg('Bitten!', 3 - S.bites === 1 ? 'One more bite and you\'re done' : 'Two bites left', true);
+      }
       if (sh.lunge > 0.7) sh.lunge = -0.7;   // missed: it circles and comes again almost straight away
     } else if (sh.lunge < 0) sh.lunge = Math.min(0, sh.lunge + dt);
     // escaped: you outran it, or it gave up
@@ -2306,7 +2411,7 @@ function updateShark(dt) {
   sh.mesh.position.set(sh.x, surf - 0.3 * sh.k + br * 0.9 * sh.k - (sh.gone > 0 ? sh.gone * 0.8 : 0), sh.z);
   _f.set(Math.cos(sh.h), 0.6 * br, Math.sin(sh.h)).normalize();
   orient(sh.mesh, _f, normalAt(sh.x, Math.max(0, sh.z)).lerp(UPV, 0.5).normalize());
-  sh.mesh.userData.tail.rotation.y = Math.sin(sh.t * 9) * 0.35;
+  sh.mesh.userData.tail.rotation.y = Math.sin(sh.t * (sh.stun > 0 ? 18 : 9)) * 0.35;
   sh.mesh.userData.mouth.scale.y = 1 + br * 2.5;
   if (Math.random() < 0.6) emit(sh.x + rand(-0.3, 0.3), surf + 0.15, sh.z + rand(-0.2, 0.2), -Math.cos(sh.h) * 2, rand(0.8, 2), -Math.sin(sh.h) * 2, 0.4);
 }
@@ -3093,6 +3198,8 @@ function updateHud() {
   const v = { score: Math.round(S.score), mult: S.mult, spd: Math.round(S.s * 2.2), ft: Math.round(amp(S.x) * 1.6), goal: LV.goal ? Math.max(0, Math.round(LV.goal - (S.score - (S.lvStart || 0)))) : -1 };
   if (v.goal !== shown.goal) { $('goal').textContent = v.goal < 0 ? '∞' : v.goal.toLocaleString(); $('goalLbl').textContent = v.goal < 0 ? 'Free surf' : 'Lvl ' + (stageIdx + 1) + ' to go'; }
   if (v.score !== shown.score) $('score').textContent = v.score.toLocaleString();
+  v.bites = LV.sharks ? S.bites : -1;
+  if (v.bites !== shown.bites) { $('bitesBox').hidden = v.bites < 0; $('bites').textContent = Math.max(0, v.bites) + '/3'; }
   if (v.mult !== shown.mult) $('mult').textContent = '×' + v.mult;
   if (v.spd !== shown.spd) $('spd').textContent = v.spd;
   if (v.ft !== shown.ft) $('ft').textContent = v.ft;
