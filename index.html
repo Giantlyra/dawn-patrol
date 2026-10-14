@@ -416,7 +416,7 @@ const boils = [];
 function reset() {
   boils.length = 0;
   if (S) for (const o of S.obs) world.remove(o.mesh);
-  if (S && S.sharks) S.sharks.forEach(sh => world.remove(sh.mesh));
+  if (S && S.sharks) S.sharks.forEach(sh => { world.remove(sh.mesh); world.remove(sh.ghost); });
   if (S && S.critters) for (const c of S.critters) world.remove(c.mesh);
   S = { t: 0, x: 0, u: 0.5, vy: 0, s: 15, gap: 18, air: false, h: 0, vh: 0, rot: 0, airT: 0, airY: 0,
         score: 0, mult: 1, multT: 0, tubeT: 0, bestTube: 0, obs: [], nextObs: 40, alive: true, shake: 0,
@@ -688,7 +688,10 @@ function makeBoardGeo(b) {
   g.translate(0, 0, -T * 0.2);
   g.rotateX(-Math.PI / 2);
   const pos = g.attributes.position;
+  const lim = hl + T * 0.3;
   for (let i = 0; i < pos.count; i++) {
+    // the rounded rail bevel shoots spikes out of the sharp nose and tail corners: pull those points back to the outline
+    if (Math.abs(pos.getX(i)) > lim) { const k = lim / Math.abs(pos.getX(i)); pos.setX(i, pos.getX(i) * k); pos.setZ(i, pos.getZ(i) * k); }
     const x = pos.getX(i), t = x / hl;
     pos.setY(i, pos.getY(i) * (1 - 0.6 * t * t) + rocker(x));
   }
@@ -1203,8 +1206,12 @@ function buildBoard(g, r) {
   } else {
     fin(makeFinGeo(0.2, 1.4, 1.6), -hl + 0.25, 0, 0, 0);   // one tall, raked single fin
   }
-  const sl = BD.L * 0.86, stringer = add(new THREE.BoxGeometry(sl, 0.004, 0.008), new THREE.MeshBasicMaterial({ color: r.board === 'long' ? 0x6b4a2c : 0x9a8f7a }));
-  stringer.position.set(0.04, deckY(0.04) + 0.001, 0);
+  // the stringer follows the deck's rocker instead of running straight (a straight one poked out under the nose)
+  const sl = BD.L * 0.86, sg = new THREE.BoxGeometry(sl, 0.004, 0.008, 40, 1, 1), sp = sg.attributes.position;
+  for (let i = 0; i < sp.count; i++) { const x = sp.getX(i) + 0.04; sp.setY(i, sp.getY(i) + deckY(x) + 0.001); }
+  sg.computeVertexNormals();
+  const stringer = add(sg, new THREE.MeshBasicMaterial({ color: r.board === 'long' ? 0x6b4a2c : 0x9a8f7a }));
+  stringer.position.set(0.04, 0, 0);
   if (BD.pad !== null) {
     const pad = add(new THREE.BoxGeometry(0.3, 0.012, BD.W * 0.6), new THREE.MeshLambertMaterial({ color: r.boardC === 5 ? 0xe8e2d4 : 0x2a2a33 }));
     pad.position.set(BD.pad, deckY(BD.pad) + 0.004, 0);
@@ -1871,7 +1878,7 @@ function addScore(p) {
 // the next level just starts: the swell builds, the hazards come in, and you keep riding
 function startStage() {
   if (LV.tube) { S.nextBarrel = S.t + 3; S.nextHol = 1e9; }
-  if (!LV.sharks) { S.sharks.forEach(sh => world.remove(sh.mesh)); S.sharks = []; }
+  if (!LV.sharks) { S.sharks.forEach(sh => { world.remove(sh.mesh); world.remove(sh.ghost); }); S.sharks = []; }
   else S.nextShark = S.t + rand(1, 2);   // a shark level starts with one on you straight away
 }
 function clearStage() {
@@ -2314,18 +2321,26 @@ function spawnShark() {
   const behind = Math.random() < 0.85;
   if (behind && S.gap < 6) { S.nextShark = S.t + 0.8; return; }   // no room behind you yet: try again in a moment
   const others = S.sharks.length, zs = (S.u > 0.5 ? rand(0.2, 0.4) : rand(0.6, 0.85)) * D;
-  const sh = behind
+  const front = amp(S.x) > 2.4 && !S.sharks.some(o => o.role === 'front') && (S.sharks.some(o => o.role === 'chase') || !behind);   // on a big wave the one ahead stalks you in the face
+  const sh = front
+    ? { x: S.x + rand(16, 22), z: S.u * D + rand(-1.5, 1.5), h: Math.PI, v: S.s, role: 'front' }
+    : behind
     ? { x: S.x - Math.min(16, S.gap - 4) + rand(-2, 2), z: others ? clamp(zs + (Math.random() < 0.5 ? -1 : 1) * rand(3, 6), 0.8, D) : zs, h: 0, v: 10 }
     : { x: S.x + rand(42, 52), z: rand(0.35, 0.75) * D, h: Math.PI, v: 5, ahead: true };
   // every time one comes back it's bigger, a bit quicker, hunts you for longer, and soon learns to dodge the rocks
   const n = ++S.sharkN, k = Math.min(2.6, 1 + 0.3 * (n - 1));
   Object.assign(sh, { t: 0, lunge: 0, passed: false, aired: false, gone: 0, close: 99, n, k, stun: 0,
     chase: 110 + 50 * (n - 1), lead: 70 + 20 * (n - 1), clear: 0.9 + 0.35 * (k - 1) });
+  sh.role = sh.role || (sh.ahead ? 'ahead' : 'chase');
+  sh.nextCharge = rand(3, 5); sh.charge = 0; sh.depth = 0.5; sh.slaps = 0;
   sh.mesh = makeShark(); sh.mesh.scale.setScalar(k); world.add(sh.mesh);
+  // what you actually see: the dark shape of it under the surface of the face
+  sh.ghost = sh.mesh.clone(); sh.ghost.traverse(o => { if (o.isMesh) o.material = sharkGhostMat; }); sh.ghost.renderOrder = 2; world.add(sh.ghost);
   S.sharks.push(sh);
-  S.nextShark = S.t + rand(9, 16);   // the next one joins the hunt if there's room for it
+  S.nextShark = S.t + (amp(S.x) > 2.4 && S.sharks.length < 2 ? rand(4, 7) : rand(9, 16));   // the next one joins the hunt if there's room for it
   const many = S.sharks.length > 1 ? ` (${S.sharks.length} on you)` : '';
-  msg((n === 1 ? 'Shark!' : n === 2 ? "Another one, and it's bigger" : `Shark #${n}: even bigger`) + many, sh.ahead ? 'Fin ahead: carve round it or air over it' : 'Behind you: keep your speed up and outrun it', true);
+  msg((n === 1 ? 'Shark!' : n === 2 ? "Another one, and it's bigger" : `Shark #${n}: even bigger`) + many,
+    sh.role === 'front' ? 'In the face ahead of you, watching. Carve round it, or hit it with your fins' : sh.ahead ? 'Fin ahead: carve round it or air over it' : 'Behind you: keep your speed up and outrun it', true);
 }
 function biteFlash() {
   let f = document.getElementById('biteFx');
@@ -2333,11 +2348,12 @@ function biteFlash() {
   f.style.transition = 'none'; f.style.opacity = '1';
   requestAnimationFrame(() => requestAnimationFrame(() => { f.style.transition = 'opacity .9s ease-out'; f.style.opacity = '0'; }));
 }
-function maxSharks() { return LV.tube ? 2 : Math.min(3, 1 + Math.floor(S.t / 35)); }   // one to start, then the pack grows
+const sharkGhostMat = new THREE.MeshBasicMaterial({ color: 0x021018, transparent: true, opacity: 0.7, depthWrite: false });
+function maxSharks() { return LV.tube ? 2 : Math.min(3, 1 + Math.floor(S.t / 35) + (amp(S.x) > 2.4 ? 1 : 0)); }   // one to start, then the pack grows; a big wave brings a second straight away
 function updateShark(dt) {
   if (S.t > S.nextShark && !S.choosing && LV.sharks && S.sharks.length < maxSharks()) spawnShark();
   for (let i = S.sharks.length - 1; i >= 0; i--) if (updateOneShark(S.sharks[i], dt) === 'gone') {
-    world.remove(S.sharks[i].mesh); S.sharks.splice(i, 1);
+    world.remove(S.sharks[i].mesh); world.remove(S.sharks[i].ghost); S.sharks.splice(i, 1);
     S.nextShark = Math.min(S.nextShark, S.t + rand(4, 9));
   }
 }
@@ -2353,6 +2369,14 @@ function updateOneShark(sh, dt) {
     const lead = Math.min(1.2, dist / 14);
     const tx = S.x + (S.air ? S.avx : S.s * Math.cos(S.th)) * lead, tz = (S.air ? S.az : rz) + (S.air ? 0 : S.s * Math.sin(S.th)) * lead;
     let want = Math.atan2(tz - sh.z, tx - sh.x);
+    // the one in front: it keeps pace a dozen metres ahead in the face, turned back to watch you, then comes at you
+    let station = false;
+    if (sh.role === 'front') {
+      if (dx > 3) { sh.role = 'chase'; sh.charge = 0; }   // you got past it: now it hunts you from behind
+      else if (sh.charge > 0) sh.charge -= dt;
+      else if (sh.t > sh.nextCharge && dist < 22) { sh.charge = 1.8; sh.nextCharge = sh.t + rand(5, 8); }
+      else station = true;
+    }
     // the rocks: a young shark swims straight into them; after a while (and every one after the first) it steers round
     const smart = sh.n > 1 || sh.t > 15, ch = Math.cos(sh.h), shh = Math.sin(sh.h);
     for (const o of S.obs) {
@@ -2374,16 +2398,40 @@ function updateOneShark(sh, dt) {
       if (sd < 3 * sh.k && sd > 0.01) { sh.x += sx / sd * dt * 3; sh.z += sz / sd * dt * 3; }
     }
     const turn = (2.4 + 0.15 * (sh.n - 1)) * (sh.stun > 0 ? 0.4 : 1);
+    if (station && sh.stun <= 0) {
+      // drift with the wave to its spot ahead of you, nose pointed back at you
+      const vx = S.air ? S.avx : S.s * Math.cos(S.th);
+      const px = S.x + 11 + 2 * Math.sin(sh.t * 0.8), pz = clamp(rz + 2.2 * Math.sin(sh.t * 0.6), 0.15 * D, 0.92 * D);
+      sh.x += (vx + clamp((px - sh.x) * 1.2, -6, 6)) * dt;
+      sh.z += clamp((pz - sh.z) * 1.5, -5, 5) * dt;
+      sh.h += clamp(wrap(Math.atan2(rz - sh.z, S.x - sh.x) - sh.h), -turn * dt, turn * dt);
+      sh.v = Math.abs(vx);
+    } else {
     sh.h += clamp(wrap(want - sh.h), -turn * dt, turn * dt);
     // it hunts relentlessly: it keeps pace with the wave and surges in bursts (about 3 s on, 1.5 s to recover)
     const burstOn = sh.t > 4 && (sh.t % 4.5) < 3;   // it stalks for a few seconds before the first surge
-    const sprint = sh.stun > 0 ? 3 : sh.ahead && dx < 0 && dist > 10 ? 7 : burstOn && dist < 16 + 3 * sh.k ? Math.max(16, S.s + 2.5) + 0.8 * (sh.n - 1) : Math.max(13, ws * 0.98);
+    const sprint = sh.stun > 0 ? 3 : sh.charge > 0 ? 9 : sh.ahead && dx < 0 && dist > 10 ? 7 : burstOn && dist < 16 + 3 * sh.k ? Math.max(16, S.s + 2.5) + 0.8 * (sh.n - 1) : Math.max(13, ws * 0.98);
     sh.v += (sprint - sh.v) * Math.min(1, dt * 1.5);
     sh.x += Math.cos(sh.h) * sh.v * dt;
-    sh.z = clamp(sh.z + Math.sin(sh.h) * sh.v * dt, 0.6, D * 1.05);
+    }
+    // on a big wave they swim up in the face with you, not out on the flats
+    const big = amp(S.x) > 2.4;
+    sh.z = clamp(sh.z + (station ? 0 : Math.sin(sh.h) * sh.v * dt), big ? 0.15 * D : 0.6, big ? 0.92 * D : D * 1.05);
     if (dist < sh.close) sh.close = dist;
     // airing over it
     if (S.air && !sh.aired && dist < 2.6 * sh.k && S.h > sh.clear) { sh.aired = true; trick(sh.n > 1 ? 'Big shark air' : 'Shark air', 800 + 300 * (sh.n - 1)); }
+    // the fins: carve hard through it and the tail of the board smacks it; it backs off, and twice is enough to see it off
+    if (!S.air && S.alive && sh.stun <= 0 && S.t - (S.carveT ?? -9) < 0.35) {
+      const tail = boardEnds()[1], td = Math.hypot(tail[0] - sh.x, tail[2] - sh.z);
+      if (td < 1.5 * sh.k) {
+        sh.slaps++; sh.stun = 2; sh.lunge = -2; sh.charge = 0;
+        const ax = sh.x - S.x, az = sh.z - rz, al = Math.hypot(ax, az) || 1;
+        sh.x += ax / al * 3; sh.z = clamp(sh.z + az / al * 3, 0.6, D * 1.05); sh.h = Math.atan2(az, ax);
+        burst(sh.x, waveY(sh.x, sh.z) + 0.3, sh.z, 70, 4);
+        trick(sh.slaps > 1 ? 'Fin slap: it\'s had enough' : 'Fin slap', 1000 * sh.n);
+        if (sh.slaps > 1) sh.gone = 0.001;
+      }
+    }
     // the bite: it breaches and takes you, barrel or not; only the air saves you
     if (dist < 2.2 * sh.k && sh.lunge <= 0 && sh.stun <= 0 && sh.t > 2.5 && !(S.air && S.h > sh.clear)) sh.lunge = 0.001;
     if (sh.lunge > 0) {
@@ -2408,9 +2456,20 @@ function updateOneShark(sh, dt) {
   }
   // place it: mostly under water, fin and back cutting through, breaching when it strikes
   const surf = waveY(sh.x, sh.z), br = sh.lunge > 0 ? Math.sin(Math.PI * Math.min(1, sh.lunge / 0.7)) : 0;
-  sh.mesh.position.set(sh.x, surf - 0.3 * sh.k + br * 0.9 * sh.k - (sh.gone > 0 ? sh.gone * 0.8 : 0), sh.z);
+  // it cruises under the surface of the face and only comes up, fin out, when it closes in to strike
+  const dNow = Math.hypot(S.x - sh.x, (S.air ? S.az : S.u * D) - sh.z);
+  const depthT = sh.lunge > 0 ? 0.25 : dNow < 5 * sh.k || sh.charge > 0 ? 0.32 : 0.75;
+  sh.depth += (depthT - sh.depth) * Math.min(1, dt * 2);
+  sh.mesh.position.set(sh.x, surf - sh.depth * sh.k + br * 0.9 * sh.k - (sh.gone > 0 ? sh.gone * 0.8 : 0), sh.z);
+  const nrm = normalAt(sh.x, Math.max(0, sh.z)).clone();
   _f.set(Math.cos(sh.h), 0.6 * br, Math.sin(sh.h)).normalize();
-  orient(sh.mesh, _f, normalAt(sh.x, Math.max(0, sh.z)).lerp(UPV, 0.5).normalize());
+  orient(sh.mesh, _f, nrm.clone().lerp(UPV, 0.5).normalize());
+  // its shadow in the water: lying on the face, darker the nearer the surface it swims
+  sh.ghost.position.set(sh.x, surf + 0.04, sh.z);
+  _f.set(Math.cos(sh.h), 0, Math.sin(sh.h));
+  orient(sh.ghost, _f, nrm);
+  sh.ghost.scale.set(sh.k, 0.05 * sh.k, sh.k);
+  sh.ghost.visible = sh.gone <= 0 || sh.gone < 1.5;
   sh.mesh.userData.tail.rotation.y = Math.sin(sh.t * (sh.stun > 0 ? 18 : 9)) * 0.35;
   sh.mesh.userData.mouth.scale.y = 1 + br * 2.5;
   if (Math.random() < 0.6) emit(sh.x + rand(-0.3, 0.3), surf + 0.15, sh.z + rand(-0.2, 0.2), -Math.cos(sh.h) * 2, rand(0.8, 2), -Math.sin(sh.h) * 2, 0.4);
@@ -2880,10 +2939,11 @@ function updatePlay(dt) {
     // the swell stands up over it and buries it in a boil you can ride straight across
     if (o.sink) { if (!boils.includes(o)) boils.push(o); continue; }
     const dx = Math.abs(o.x - S.x), dz = Math.abs((o.u - S.u) * D);
-    if ((!S.air || S.h < o.top) && dx < o.rx + 0.4 && dz < o.rz + 0.3)
+    const topNow = o.top * (1 - 0.55 * (o.cover || 0));
+    if ((!S.air || S.h < topNow) && dx < o.rx + 0.4 && dz < o.rz + 0.3)
       return wipe('Reefed', 'You hit the rock. Carve above or below it, or hit the lip just before it and air over the top.');
     // flying clean over the rock
-    if (S.air && !o.aired && dx < o.rx && dz < o.rz + 0.6 && S.h >= o.top) {
+    if (S.air && !o.aired && dx < o.rx && dz < o.rz + 0.6 && S.h >= topNow) {
       o.aired = true;
       bumpCombo(); addScore(400);
       msg('Over the rock', '+' + 400 * S.mult, true);
@@ -3097,6 +3157,7 @@ function update(dt) {
         }
         const k = smooth(Math.min(1, (ph - 1) / 0.5));
         o.level = ph < 1.5 ? -0.75 * h + 1.9 * h * k : 1.15 * h - (1.15 - o.settle) * h * smooth(Math.min(1, (ph - 1.5) / 1.8));
+        if (o.level > 0) o.level *= 0.38;   // a low hump of boiling water, not a hill
         // rooster tail: the surge hitting the rock throws a plume up off the top of the boil, fanned back by the offshore
         const plume = ph < 1.5 ? k : Math.max(0, 1 - (ph - 1.5) / 2.2);
         for (let i = 0; i < plume * 7; i++) {
@@ -3116,6 +3177,8 @@ function update(dt) {
       o.ring.position.y = o.ringY + o.level * 0.85;
       o.ring.scale.setScalar(Math.max(0.001, 1 - smooth(Math.min(1, ph / 0.35))));   // the painted ring gives way to real foam
     }
+    // as the wave reaches it, the face stands up over the reef and buries most of the rock: just the top still breaks the surface
+    if (!o.sink) { const cov = smooth(clamp(1 - (o.x - S.x - 6) / 30, 0, 1)); o.cover = cov; hide = Math.max(hide, cov * 0.75); o.ring.position.y = o.ringY + cov * o.top * 0.3; }
     o.mesh.position.set(o.x, base + o.top * (0.35 - 0.45 * hide), z);
   }
 
