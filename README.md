@@ -15,4 +15,4 @@ Open `index.html` to pick a version: `v2/` is the latest, `v1/` the original lin
 - Sharks, seals, dolphins, mantas, pelicans and gulls — don't hit them
 
 ## Credits
-The tiger shark and reef rocks are CC0 scans from [Poly Haven](https://polyhaven.com) (Bronze Shark Statue, Rock 07, Rock 09, Boulder 01), reduced and repainted in Blender and embedded in `v2/index.html`. The dolphin, seal, manta, pelican and gull were modelled in Blender for the game.
+The tiger shark and reef rocks are CC0 scans from [Poly Haven](https://polyhaven.com) (Bronze Shark Statue, Rock 07, Rock 09, Boulder 01), reduced and repainted in Blender and embedded in `v2/index.html`. The dolphin, seal, manta, pelican and gull were modelled in Blender for the game. The surfers' bodies are Blender's CC0 [Human Base Meshes](https://www.blender.org/download/demo-files/#assets) (realistic male and female), cut at the neck and skinned in Blender to the game's rider skeleton.
