@@ -422,7 +422,7 @@ function reset() {
         barrel: 0, barrelT: 0, nextBarrel: 6, hol: 0, holT: 0, nextHol: rand(3, 6), holEnd: 0, barrelEnd: 0, head: 0, turn: 0, lean: 0, th: 0, turnRate: 0, th0: 0, assist: 0, avx: 0,
         wentBack: false, rebounded: false, backT: 0, lastUpT: -9, camYaw: 0, rebound: 0, slip: 0, rollV: 0, rollTarget: 0, yawRate: 0, coil: 0, pitch: 0, topSlip: 0, lastPumpT: -9, hackSlip: 0,
         downT: -9, prevD: false, chip: false, grindT: 0, grinding: false, floating: false, foamT: 0, foamPush: 0, landT: 0, load: 0, loadSlow: 0,
-        choosing: false, chooseT: 0, autoTurn: 0, roll: 0, railKey: null, railDir: 0, fakie: false, boardOff: 0, revertT: 0, hardT: 0, prevL: false, prevR: false, size: 1, sizeT: 1, nextSet: 18, grow: 0, barrelLen: 1, barrelLenT: 1, swellMsg: 60, warm: 0, shark: null, sharkN: 0, nextShark: rand(18, 32), critters: [], nextCritter: rand(5, 9), adren: 0, flow: 0, claimT: 0, claimKind: 0, lastPopT: -9, pumpReq: false, pumpCd: 0, pumpT: 0, pumpSide: 1,
+        choosing: false, chooseT: 0, autoTurn: 0, roll: 0, railKey: null, railDir: 0, fakie: false, boardOff: 0, revertT: 0, hardT: 0, prevL: false, prevR: false, size: 1, sizeT: 1, nextSet: 18, grow: 0, barrelLen: 1, barrelLenT: 1, swellMsg: 60, warm: 0, shark: null, sharkN: 0, nextShark: rand(6, 12), critters: [], nextCritter: rand(5, 9), adren: 0, flow: 0, claimT: 0, claimKind: 0, lastPopT: -9, pumpReq: false, pumpCd: 0, pumpT: 0, pumpSide: 1,
         ay: 0, az: 0, avy: 0, avz: 0, spin: 0, grabT: 0, grabbing: false, maxH: 0 };
 }
 reset();
@@ -2272,7 +2272,7 @@ function updateShark(dt) {
   const dx = S.x - sh.x, dz = (S.air ? S.az : rz) - sh.z, dist = Math.hypot(dx, dz);
   if (sh.gone > 0) {   // diving away
     sh.gone += dt; sh.z += dt * 2;
-    if (sh.gone > 2.5) { world.remove(sh.mesh); S.shark = null; S.nextShark = S.t + rand(12, 24); return; }
+    if (sh.gone > 2.5) { world.remove(sh.mesh); S.shark = null; S.nextShark = S.t + rand(4, 9); return; }
   } else {
     // hunting: aim a little ahead of you, but it can only turn so fast and only sprint for a bit
     const lead = Math.min(1.2, dist / 14);
