@@ -100,6 +100,26 @@ kbd{font-family:var(--mono);font-size:11px;border:1px solid rgba(245,240,228,.4)
 .chip.locked{opacity:.6;border-style:dashed}
 .chip.legend[aria-pressed="true"]{background:rgba(255,210,122,.16)}
 #rLegendHint{min-height:1.5em}
+.pad{display:none}
+.touchonly{display:none !important}
+body.touch .touchonly{display:grid !important}
+body.touch .pad:not([hidden]){display:block}
+body.touch .keys{display:none}
+.pad > *{position:fixed;touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
+.stick{left:max(20px,env(safe-area-inset-left,0px) + 14px);bottom:calc(env(safe-area-inset-bottom,0px) + 22px);width:136px;height:136px;border-radius:50%;
+  background:radial-gradient(circle,rgba(18,16,42,.18),rgba(18,16,42,.42));border:2px solid rgba(245,240,228,.35)}
+.stick::before,.stick::after{content:"";position:absolute;left:50%;top:50%;background:rgba(245,240,228,.18);transform:translate(-50%,-50%)}
+.stick::before{width:2px;height:70%}.stick::after{width:70%;height:2px}
+.knob{position:absolute;left:50%;top:50%;width:58px;height:58px;margin:-29px 0 0 -29px;border-radius:50%;background:rgba(245,240,228,.8);
+  box-shadow:0 2px 0 var(--ink);pointer-events:none}
+.stick.on{border-color:var(--sun)}.stick.on .knob{background:var(--sun)}
+.tbtn{appearance:none;border:2px solid rgba(245,240,228,.45);border-radius:50%;background:rgba(18,16,42,.5);color:var(--foam);
+  font-family:var(--mono);font-size:12px;letter-spacing:.08em;text-transform:uppercase;display:flex;align-items:center;justify-content:center;text-align:center;line-height:1.2;padding:0}
+.tbtn.on{background:var(--sun);color:var(--ink);border-color:var(--sun)}
+.tpump{right:max(20px,env(safe-area-inset-right,0px) + 14px);bottom:calc(env(safe-area-inset-bottom,0px) + 26px);width:86px;height:86px;font-size:13px}
+.tstall{right:max(118px,env(safe-area-inset-right,0px) + 112px);bottom:calc(env(safe-area-inset-bottom,0px) + 18px);width:70px;height:70px;font-size:10px}
+.tpause{right:16px;top:calc(env(safe-area-inset-top,0px) + 104px);width:40px;height:40px;border-radius:4px;font-size:14px}
+@media (max-height:420px){.stick{width:116px;height:116px}.tpump{width:76px;height:76px}.tstall{width:62px;height:62px;right:max(104px,env(safe-area-inset-right,0px) + 100px)}}
 </style>
 
 <canvas id="cv" tabindex="0" aria-label="Surf game. Arrow keys to ride, C to change view."></canvas>
@@ -129,6 +149,12 @@ kbd{font-family:var(--mono);font-size:11px;border:1px solid rgba(245,240,228,.4)
   <span><kbd>M</kbd> sound</span>
 </div>
 <button class="viewbtn" id="viewBtn" type="button">View: Beach</button>
+<div class="pad" id="pad" hidden>
+  <div class="stick" id="stick" aria-label="Steer: up and down for rail turns, left and right along the wave"><div class="knob" id="knob"></div></div>
+  <button class="tbtn tstall" id="tStall" type="button">Stall<br>/ Grab</button>
+  <button class="tbtn tpump" id="tPump" type="button">Pump</button>
+  <button class="tbtn tpause" id="tPause" type="button" aria-label="Pause">II</button>
+</div>
 
 <div class="overlay" id="paused" hidden>
   <div class="card">
@@ -147,6 +173,7 @@ kbd{font-family:var(--mono);font-size:11px;border:1px solid rgba(245,240,228,.4)
     <h1>Dawn Patrol</h1>
     <p class="lede">The set is standing up on the peak. Stay ahead of the whitewater, pump for speed, launch off the lip and tuck into the barrel.</p>
     <ul class="how">
+      <li class="touchonly"><span>On a phone</span><span>Left thumb stick = the arrow keys (diagonals work). <b>Pump</b> = Space, <b>Stall / Grab</b> = Shift. You can also drag a finger on the wave to steer toward it.</span></li>
       <li><span>Takeoff</span><span>You drop in at the peak. Press <kbd>←</kbd> or <kbd>→</kbd> to go left or right; the wave peels the way you pick.</span></li>
       <li><span><kbd>↑</kbd> <kbd>↓</kbd> rail turns</span><span>Hold <kbd>↑</kbd> to aim up the face, <kbd>↓</kbd> to aim down it: the board rolls onto its rail, arcs round to that line and holds it. Hold longer for a steeper line; add <kbd>←</kbd>/<kbd>→</kbd> for a diagonal. Turns are long arcs at speed and tight when you're slow. <kbd>←</kbd> <kbd>→</kbd> point you along the wave either way.</span></li>
       <li><span><kbd>Space</kbd> pump</span><span>Tap in rhythm to pump down the line. Works best high on the face.</span></li>
@@ -1863,6 +1890,52 @@ const ptrUp = () => { ptr.active = false; };
 cv.addEventListener('pointerup', ptrUp);
 cv.addEventListener('pointercancel', ptrUp);
 
+// ---------- on-screen controls (phones and tablets) ----------
+// The thumb stick stands in for the arrow keys (8 ways, so diagonals work), Pump for Space, Stall / Grab for Shift.
+// They only show on touch screens; the first touch anywhere turns them on.
+const isTouch = () => document.body.classList.add('touch');
+if (matchMedia('(pointer: coarse)').matches || navigator.maxTouchPoints > 0 && !matchMedia('(pointer: fine)').matches) isTouch();
+addEventListener('pointerdown', e => { if (e.pointerType === 'touch') isTouch(); }, true);
+(() => {
+  const stick = $('stick'), knob = $('knob');
+  let id = null;
+  const set = (l, r, u, d) => { keys.arrowleft = l; keys.arrowright = r; keys.arrowup = u; keys.arrowdown = d; };
+  const move = e => {
+    const b = stick.getBoundingClientRect(), R = b.width / 2;
+    let x = (e.clientX - b.left - R) / R, y = (e.clientY - b.top - R) / R;
+    const m = Math.hypot(x, y);
+    if (m > 1) { x /= m; y /= m; }
+    knob.style.transform = `translate(${x * R * 0.62}px,${y * R * 0.62}px)`;
+    const on = m > 0.3;   // dead zone in the middle; past it each axis counts once it leans 40% that way
+    set(on && x < -0.4, on && x > 0.4, on && y < -0.4, on && y > 0.4);
+  };
+  const end = e => {
+    if (e.pointerId !== id) return;
+    id = null; stick.classList.remove('on'); knob.style.transform = ''; set(false, false, false, false);
+  };
+  stick.addEventListener('pointerdown', e => {
+    e.preventDefault(); isTouch();
+    if (mode === 'paused') { resume(); return; }
+    id = e.pointerId; try { stick.setPointerCapture(id); } catch (err) {} stick.classList.add('on'); move(e);
+  });
+  stick.addEventListener('pointermove', e => { if (e.pointerId === id) move(e); });
+  stick.addEventListener('pointerup', end); stick.addEventListener('pointercancel', end);
+  const hold = (el, key, down) => {
+    let pid = null;
+    el.addEventListener('pointerdown', e => {
+      e.preventDefault();
+      if (mode === 'paused') { resume(); return; }
+      pid = e.pointerId; try { el.setPointerCapture(pid); } catch (err) {} el.classList.add('on'); keys[key] = true; if (down) down();
+    });
+    const up = e => { if (e.pointerId !== pid) return; pid = null; el.classList.remove('on'); keys[key] = false; };
+    el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up);
+  };
+  hold($('tPump'), ' ', () => { if (mode === 'play' && S.alive) S.pumpReq = true; });
+  hold($('tStall'), 'shift');
+  for (const el of [stick, $('tPump'), $('tStall')]) el.addEventListener('contextmenu', e => e.preventDefault());
+  $('tPause').addEventListener('click', () => { if (mode === 'play' && S.alive) pause(); else if (mode === 'paused') resume(); });
+})();
+
 $('startBtn').addEventListener('click', start);
 $('againBtn').addEventListener('click', start);
 $('resumeBtn').addEventListener('click', resume);
@@ -2045,7 +2118,7 @@ function start() {
   canStart = true;
   player.visible = true;
   resetFallPose();
-  $('menu').hidden = true; $('over').hidden = true; $('paused').hidden = true; $('hud').hidden = false; $('keys').hidden = false;
+  $('menu').hidden = true; $('over').hidden = true; $('paused').hidden = true; $('hud').hidden = false; $('keys').hidden = false; $('pad').hidden = false;
   cv.focus({ preventScroll: true });
 }
 
@@ -2284,7 +2357,7 @@ function wipe(title, reason) {
     $('rScore').textContent = final.toLocaleString();
     $('rBest').textContent = best.toLocaleString();
     $('rTube').textContent = S.bestTube.toFixed(1) + 's';
-    $('over').hidden = false; $('hud').hidden = true; $('keys').hidden = true;
+    $('over').hidden = false; $('hud').hidden = true; $('keys').hidden = true; $('pad').hidden = true;
     mode = 'over';
     player.visible = false;
     showLevel();
