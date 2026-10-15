@@ -217,7 +217,9 @@ body:not(.touch) .padrow{display:none}
       <label>Name<input id="rName" maxlength="16" autocomplete="off" spellcheck="false"></label>
       <label>Nationality<select id="rNation"></select></label>
     </div>
-    <div class="opt"><span>Stance preview</span><div class="chips" id="rStance"></div><p class="hint" id="rStanceHint"></p></div>
+    <div class="opt"><span>Camera</span><div class="chips" id="rCam"></div></div>
+    <div class="opt"><span>Stance</span><div class="chips" id="rFoot"></div><p class="hint">Regular: left foot forward, so you face the wave going right. Goofy: right foot forward, face it going left.</p></div>
+    <div class="opt"><span>Skill preview</span><div class="chips" id="rStance"></div><p class="hint" id="rStanceHint"></p></div>
     <div class="opt"><span>Skin</span><div class="sw" id="rSkin"></div></div>
     <div class="opt"><span>Hair</span><div class="chips" id="rHair"></div></div>
     <div class="opt"><span>Hair colour</span><div class="sw" id="rHairC"></div></div>
@@ -990,6 +992,7 @@ const fixRider = () => {
   rider.hair = pick(rider.hair, HAIRS, 'crop'); rider.face = pick(rider.face, FACES, 'clean'); rider.frame = pick(rider.frame, FRAMES, 'broad');
   rider.build = pick(rider.build, BUILDS, 'athletic'); rider.wear = pick(rider.wear, WEARS, 'full');
   rider.board = pick(rider.board, BOARD_TYPES, 'hp');
+  rider.stance = rider.stance === 'goofy' ? 'goofy' : 'regular';
   let hs = 7; for (const ch of rider.name) hs = (hs * 31 + ch.charCodeAt(0)) >>> 0;
   const byName = (list, k) => list[(hs >>> k) % list.length][0];
   rider.eyes = pick(rider.eyes, EYES, byName(EYES, 1)); rider.brows = pick(rider.brows, BROWS, byName(BROWS, 4));
@@ -1685,6 +1688,9 @@ const hoodOn = r => r.hood === 'on' || (r.hood === 'auto' && !!(LV && LV.ice));
 function dressSurfer(g, r) {
   const ud = g.userData;
   ud.legend = LEGENDS.some(l => l.look.name === r.name);
+  // the rig is built goofy: facing -z with the nose on the right. Regular is its mirror image. Going the other way the whole
+  // world is mirrored, so the body is flipped back to keep your stance: frontside one way, backside the other
+  ud.mzBase = r.stance === 'goofy' ? 1 : -1;
   if (ud.body) {
     g.remove(ud.body);
     ud.body.traverse(o => { if (o.isMesh) { o.geometry.dispose(); [].concat(o.material).forEach(m => { if (m.map && m.map.own) m.map.dispose(); m.dispose(); }); } });
@@ -1771,7 +1777,8 @@ function dressSurfer(g, r) {
     const hg = hairGeo(r.hair, rng);
     if (hg) mesh(hg, M.h, R.head);
   }
-  ud.body = body; ud.rig = R; ud.curvy = curvy; ud.shW = shW;
+  ud.body = body; ud.rig = R;
+  stanceMirror(g); ud.curvy = curvy; ud.shW = shW;
   body.traverse(o => { if (o.isMesh) { o.frustumCulled = false; o.castShadow = true; o.receiveShadow = true; } });
   ud.skin = null;
   const BG = BODY[curvy ? 'female' : 'male'];
@@ -1916,7 +1923,7 @@ function poseRig(g) {
   R.handF.position.copy(J.handF); R.handF.quaternion.setFromUnitVectors(UPV, _a.subVectors(J.handF, J.elF).normalize());
   R.handB.position.copy(J.handB); R.handB.quaternion.setFromUnitVectors(UPV, _a.subVectors(J.handB, J.elB).normalize());
   if (g.userData.skin) poseSkin(g.userData.skin, R);
-  if (!(S && S.fall && mode === 'play')) drawLeash(g, _la.copy(J.footB).add(_lb.set(0, -0.01, 0.03)), tailPt(_lb), true);
+  if (!(S && S.fall && mode === 'play')) drawLeash(g, _la.copy(J.footB).add(_lb.set(0, -0.01, 0.03)).multiply(_lb.set(1, 1, g.userData.mz || 1)), tailPt(_lb), true);
 }
 // put each bone of the realistic body on the joints just solved: stretched to the rig's limb lengths, turned by the
 // hips, shoulders and arms; feet and head move rigidly
@@ -1991,8 +1998,14 @@ addEventListener('blur', () => {
 const VIEWS = ['Beach', 'Chase', 'First person', 'Drone'];
 let viewIdx = 0;
 try { viewIdx = clamp(+localStorage.getItem('dawnpatrol.view') || 0, 0, VIEWS.length - 1); } catch (e) {}
+function stanceMirror(g) {
+  const ud = g.userData;
+  ud.mz = (ud.mzBase || 1) * DIR;
+  if (ud.body) ud.body.scale.z = ud.mz;
+}
 function setDir(d) {
   DIR = d;
+  stanceMirror(player);
   world.scale.x = d;
   sunDir.set(0.36 * d, 0.12, -0.92).normalize();
 }
@@ -2172,15 +2185,33 @@ function optButton(parent, key, value, label, color) {
   b.type = 'button';
   if (color) { b.style.background = color; b.setAttribute('aria-label', label); b.title = label; }
   else { b.className = 'chip'; b.textContent = label; }
-  b.addEventListener('click', () => { rider[key] = value; applyRider(); });
+  b.addEventListener('click', () => { rider[key] = value; setRiderCam(FACE_KEYS.includes(key) ? 'face' : 'body'); applyRider(); });
   parent.appendChild(b);
   riderUI.push([b, key, value]);
 }
+// the rider screen's camera: the whole rider, or a close-up on the face while you pick its features
+const FACE_KEYS = ['skin', 'hair', 'hairC', 'face', 'eyes', 'eyeC', 'brows', 'nose', 'mouth', 'extra', 'hood'];
+let riderCam = 'body';
+const camBtns = [];
+function setRiderCam(c) {
+  riderCam = c;
+  for (const [b, v] of camBtns) b.setAttribute('aria-pressed', v === c ? 'true' : 'false');
+}
 function buildRiderUI() {
+  for (const [v, l] of [['body', 'Whole rider'], ['face', 'Face close-up']]) {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'chip'; b.textContent = l;
+    b.addEventListener('click', () => setRiderCam(v));
+    $('rCam').appendChild(b);
+    camBtns.push([b, v]);
+  }
+  setRiderCam('body');
+  optButton($('rFoot'), 'stance', 'regular', 'Regular');
+  optButton($('rFoot'), 'stance', 'goofy', 'Goofy');
   PRESETS.forEach((p, i) => {
     const b = document.createElement('button');
     b.type = 'button'; b.className = 'chip'; b.textContent = flagOf(p.nation) + ' ' + p.name;
-    b.addEventListener('click', () => { rider = { ...p }; applyRider(); });
+    b.addEventListener('click', () => { rider = { ...p, stance: rider.stance }; applyRider(); });
     $('rPresets').appendChild(b);
     riderUI.push([b, 'preset', i]);
   });
@@ -2189,7 +2220,7 @@ function buildRiderUI() {
     b.type = 'button'; b.className = 'chip legend';
     b.addEventListener('click', () => {
       if (!unlocked[L.id]) { $('rLegendHint').textContent = '🔒 ' + L.look.name + ', ' + L.tag + ': ' + L.req; return; }
-      rider = { ...L.look }; applyRider();
+      rider = { ...L.look, stance: rider.stance }; applyRider();
       $('rLegendHint').textContent = L.look.name + ', ' + L.tag + '.';
     });
     $('rLegends').appendChild(b);
@@ -2240,7 +2271,7 @@ function buildRiderUI() {
     const any = a => a[Math.floor(Math.random() * a.length)];
     rider = { name: any(PRESETS).name, nation: any(NATIONS)[0], skin: Math.floor(Math.random() * SKIN.length), hair: any(HAIRS)[0], hairC: Math.random() < 0.75 ? Math.floor(Math.random() * 7) : Math.floor(Math.random() * HAIRC.length),
       face: any(FACES)[0], frame: any(FRAMES)[0], board: any(BOARD_TYPES)[0], build: any(BUILDS)[0], wear: any(WEARS)[0], suitC: Math.floor(Math.random() * SUITC.length), boardC: Math.floor(Math.random() * BOARDC.length),
-      eyes: any(EYES)[0], eyeC: Math.floor(Math.random() * EYEC.length), brows: any(BROWS)[0], nose: any(NOSES)[0], mouth: any(MOUTHS)[0], extra: Math.random() < 0.6 ? 'none' : any(EXTRAS)[0], hood: rider.hood };
+      eyes: any(EYES)[0], eyeC: Math.floor(Math.random() * EYEC.length), brows: any(BROWS)[0], nose: any(NOSES)[0], mouth: any(MOUTHS)[0], extra: Math.random() < 0.6 ? 'none' : any(EXTRAS)[0], hood: rider.hood, stance: rider.stance };
     applyRider();
   });
   $('rDone').addEventListener('click', closeRider);
@@ -2271,7 +2302,7 @@ function openRider() {
   if (mode !== 'menu' && mode !== 'over') return;
   riderFrom = mode;
   mode = 'rider';
-  previewFlow = null; showStance();
+  previewFlow = null; showStance(); setRiderCam('body');
   player.visible = true;
   resetFallPose();
   $('menu').hidden = true; $('over').hidden = true; $('rider').hidden = false;
@@ -2596,11 +2627,12 @@ function wipe(title, reason) {
 // Everything is worked in the wave's frame, relative to where it went wrong; the rider tumbles about their middle.
 const COM = new THREE.Vector3(-0.12, 0.85, -0.05), FLIP_AX = new THREE.Vector3(0.45, 0, 1).normalize();
 const _fq = new THREE.Quaternion(), _fa = new THREE.Vector3();
+const mzv = v => { v.z *= player.userData.mz || 1; return v; };   // body space to player space: regular riders are mirrored
 function startFall(kind) {
   const ud = player.userData, q0 = player.quaternion.clone(), ws = waveSpeed();
   const F = { kind, t: 0, under: 0, splashed: false, boardSplashed: false, hidden: false, anchor: player.position.clone() };
   player.quaternion.identity();
-  F.rq = q0.clone(); F.rp = COM.clone().applyQuaternion(q0);
+  F.rq = q0.clone(); F.rp = mzv(COM.clone()).applyQuaternion(q0);
   F.bq = q0.clone(); F.bp = new THREE.Vector3();
   const v = S.air ? new THREE.Vector3(S.avx, S.avy, S.avz) : new THREE.Vector3(Math.cos(S.th) * S.s, 0, Math.sin(S.th) * S.s);
   const along = new THREE.Vector3(v.x, 0, v.z).normalize(), side = new THREE.Vector3(-along.z, 0, along.x);
@@ -2681,7 +2713,7 @@ function updateFall(dt) {
   P.grab = 0; P.drag = 0; P.twist = 0.4 * Math.sin(t * 4.2); P.look = Math.sin(t * 3) * 0.8; P.bend = 0.5;
   poseRig(player);
   // the leash goes tight: the board can only get so far from your ankle before it is yanked back
-  const ankle = _la.copy(J.footB).sub(COM).applyQuaternion(F.rq).add(F.rp);
+  const ankle = mzv(_la.copy(J.footB).sub(COM)).applyQuaternion(F.rq).add(F.rp);
   const tail = tailPt(_lb).applyQuaternion(F.bq).add(F.bp);
   _ln.subVectors(tail, ankle);
   const len = _ln.length(), max = leashLen();
@@ -2695,9 +2727,9 @@ function updateFall(dt) {
       F.bw.multiplyScalar(0.8);
     }
   }
-  drawLeash(player, _la.copy(J.footB).sub(COM).applyQuaternion(F.rq).add(F.rp), tailPt(_lb).applyQuaternion(F.bq).add(F.bp), false);
+  drawLeash(player, mzv(_la.copy(J.footB).sub(COM)).applyQuaternion(F.rq).add(F.rp), tailPt(_lb).applyQuaternion(F.bq).add(F.bp), false);
   ud.body.quaternion.copy(F.rq);
-  ud.body.position.copy(F.rp).sub(_fa.copy(COM).applyQuaternion(F.rq));
+  ud.body.position.copy(F.rp).sub(mzv(_fa.copy(COM)).applyQuaternion(F.rq));
   ud.boardG.position.copy(F.bp); ud.boardG.quaternion.copy(F.bq);
   if (F.under > 1.3) F.hidden = true;   // held down
   S.x = F.anchor.x + Math.min(F.rp.x, 8);   // the camera keeps you in shot
@@ -3892,11 +3924,25 @@ function update(dt) {
   if (mode === 'rider') {
     // portrait: in front of the rider on the face, drifting slowly round them
     view = 'Rider';
-    const a = -0.5 + 0.4 * Math.sin(T * 0.22), dist = tall ? 4.4 : 3.6;
-    const cx = S.x + Math.cos(a) * dist, cz = pz + Math.sin(a) * dist;
-    cp = new THREE.Vector3(cx, Math.max(py + 1.2, waveY(cx, Math.max(0, cz)) + 0.7), cz);
-    look = new THREE.Vector3(S.x, py + 0.8, pz);
-    ease = 40;   // locked to the rider, who is moving with the wave
+    if (riderCam === 'face') {
+      // close-up: square on to the face wherever the head is looking, swinging gently from cheek to cheek
+      const h = player.userData.rig.head;
+      player.updateMatrixWorld();
+      const hc = h.localToWorld(new THREE.Vector3(0, 0.02, 0)), fw = h.localToWorld(new THREE.Vector3(0, 0, -1)).sub(h.getWorldPosition(new THREE.Vector3()));
+      fw.y = 0; fw.normalize();
+      const sw = 0.35 * Math.sin(T * 0.35), dist = tall ? 0.8 : 0.55;
+      fw.applyAxisAngle(UPV, sw);
+      cp = hc.clone().addScaledVector(fw, dist); cp.y += 0.04;
+      look = hc;
+      cp.x *= DIR; look.x *= DIR;   // already in the mirrored world; undo the flip applied below
+      ease = 60;
+    } else {
+      const a = -0.5 + 0.4 * Math.sin(T * 0.22), dist = tall ? 4.4 : 3.6;
+      const cx = S.x + Math.cos(a) * dist, cz = pz + Math.sin(a) * dist;
+      cp = new THREE.Vector3(cx, Math.max(py + 1.2, waveY(cx, Math.max(0, cz)) + 0.7), cz);
+      look = new THREE.Vector3(S.x, py + 0.8, pz);
+      ease = 40;   // locked to the rider, who is moving with the wave
+    }
     // keep the rider clear of the panel: to the right on wide screens, above it on tall ones
     if (tall) camera.setViewOffset(W, H, 0, H * 0.27, W, H); else camera.setViewOffset(W, H, -W * 0.21, 0, W, H);
   } else if (view === 'Chase') {
