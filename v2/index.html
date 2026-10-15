@@ -1376,7 +1376,8 @@ const restHint = n => /^(uArm|fArm|hand)/.test(n) ? FRONT : LAT;
 function sliceGeo(geo, axis, c, inRange) {
   const names = Object.keys(geo.attributes), A = {};
   for (const n of names) { const at = geo.attributes[n]; A[n] = { s: at.itemSize, a: Array.from(at.array), norm: at.normalized, T: at.array.constructor }; }
-  const P = A.position.a, idx = geo.index.array, out = [], cache = new Map(), v = i => P[i * 3 + axis];
+  const P = A.position.a, idx = geo.index.array, out = [], cache = new Map();
+  const v = typeof axis === 'function' ? i => axis(P[i * 3], P[i * 3 + 1], P[i * 3 + 2]) : i => P[i * 3 + axis];   // axis may be a function: cut along f(x, y, z) = c
   const mid = (a, b) => {
     const key = a < b ? a * 1e6 + b : b * 1e6 + a;
     if (cache.has(key)) return cache.get(key);
@@ -1402,6 +1403,18 @@ function sliceGeo(geo, axis, c, inRange) {
 }
 function buildSkin(body, BG, REST, M, W8, sportTop, bk) {
   const geo = BG.geo.clone();
+  // bottoms: shorts sit low on the hips; a bikini bottom is low-rise with the leg openings cut high over the hips in front
+  // and fuller over the seat behind. Every hem is sliced into the mesh first so it comes out as one clean line
+  const bWaist = REST.hips[0][1] + 0.75 * (REST.hips[1][1] - REST.hips[0][1]), lowY = bWaist - 0.035, crY = REST.hips[0][1];
+  const backZ = REST.footF[1][2] > REST.footF[0][2] ? -1 : 1, hipZ = REST.hips[0][2];
+  const frontK = (x, z) => clamp(0.5 + (z - hipZ) * -backZ / 0.045, 0, 1);   // 1 over the front of the hips, 0 over the seat
+  const briefTop = (x, y, z) => { const f = frontK(x, z); return bWaist - 0.08 * f - 0.025 * (1 - f); };   // dips low in front, covers the seat behind
+  const legLine = (x, y, z) => { const f = frontK(x, z), mid = crY - 0.07, side = (bWaist - 0.1) * f + (crY + 0.015) * (1 - f); return mid + (side - mid) * Math.min(1, Math.abs(x) / 0.17) ** 1.6; };
+  const pelvic = C => Math.abs(C.x) < 0.21 && C.y > crY - 0.2 && C.y < bWaist + 0.05;
+  if (sportTop) {
+    sliceGeo(geo, (x, y, z) => y - briefTop(x, y, z), 0, pelvic);
+    sliceGeo(geo, (x, y, z) => y - legLine(x, y, z), 0, pelvic);
+  } else sliceGeo(geo, 1, lowY, pelvic);
   if (sportTop) {   // straight hems for the bikini top: its edges, the band round the back, the halter straps, the waistband
     const shY0 = REST.uArmF[0][1], shX0 = Math.abs(REST.uArmF[0][0]), bot = REST.belly[1][1] - 0.035, upp = shY0 - 0.055;
     const wY = REST.hips[0][1] + 0.75 * (REST.hips[1][1] - REST.hips[0][1]), nY = REST.neck[0][1] + 0.005;
@@ -1412,6 +1425,34 @@ function buildSkin(body, BG, REST, M, W8, sportTop, bk) {
     sliceGeo(geo, 2, REST.chest[0][2] + 0.01, C => trunk(C) && C.y > bot - 0.02 && C.y < upp + 0.02);
   }
   const names = BG.names, pos = geo.attributes.position, si = geo.attributes.skinIndex, sw = geo.attributes.skinWeight;
+  // soften the skinning round the pelvis: where the seat follows the thighs and the lower back follows the hips, a
+  // hem across them gets crumpled as the legs bend. Averaging each vertex's bone weights with its neighbours a few
+  // times makes that band bend smoothly, so the waistband and leg openings stay clean lines
+  {
+    const nB = names.length, n = pos.count, W = new Float32Array(n * nB), nb = Array.from({ length: n }, () => []);
+    for (let i = 0; i < n; i++) for (let j = 0; j < 4; j++) W[i * nB + si.array[i * 4 + j]] += sw.array[i * 4 + j];
+    const id = geo.index.array;
+    for (let f = 0; f < id.length; f += 3) for (let k = 0; k < 3; k++) { const a = id[f + k], b = id[f + (k + 1) % 3]; nb[a].push(b); nb[b].push(a); }
+    const band = [];
+    for (let i = 0; i < n; i++) { const y = pos.getY(i); if (y > crY - 0.12 && y < bWaist + 0.08 && Math.abs(pos.getX(i)) < 0.22) band.push(i); }
+    // the auto-weights let the thighs drag the waist about; above the hip joint the pelvis carries it instead
+    const hipJ = (REST.thighF[0][1] + REST.thighB[0][1]) / 2, hipsB = names.indexOf('hips');
+    const thighs = names.map((nm, b) => nm.startsWith('thigh') ? b : -1).filter(b => b >= 0);
+    for (const i of band) {
+      const cap = 1 - smooth(clamp((pos.getY(i) - (hipJ - 0.04)) / 0.1, 0, 1));
+      for (const b of thighs) { const w = W[i * nB + b], keep = Math.min(w, cap); W[i * nB + b] = keep; W[i * nB + hipsB] += w - keep; }
+    }
+    const tmp = new Float32Array(nB);
+    for (let it = 0; it < 6; it++) for (const i of band) {
+      tmp.fill(0); let c = 0;
+      for (const j of nb[i]) { for (let b = 0; b < nB; b++) tmp[b] += W[j * nB + b]; c++; }
+      for (let b = 0; b < nB; b++) W[i * nB + b] = 0.5 * W[i * nB + b] + 0.5 * tmp[b] / c;
+    }
+    for (const i of band) {
+      const top = Array.from(W.subarray(i * nB, i * nB + nB), (w, b) => [w, b]).sort((p, q) => q[0] - p[0]).slice(0, 4), sum = top.reduce((t, p) => t + p[0], 0) || 1;
+      for (let j = 0; j < 4; j++) { si.array[i * 4 + j] = top[j][1]; sw.array[i * 4 + j] = top[j][0] / sum; }
+    }
+  }
   // what each patch of the body is wearing. Arms and legs are measured along the limb from the shoulder or hip, the
   // trunk by height, so the cuffs, hems and waistband run straight round the body's own edge loops
   const V = k => new THREE.Vector3().fromArray(k), MI = { k: 0, s: 1, b: 2 };
@@ -1452,7 +1493,8 @@ function buildSkin(body, BG, REST, M, W8, sportTop, bk) {
       if (t > zb && w > 0) { pos.setZ(i, (zb + (t - zb) * w) * side); moved[i] = 1; }
     }
   };
-  fill(backS, crotchY - 0.06, waistY + 0.03, 0.15, REST.hips[0][2], 0.003, 1.8);   // the seat
+  // the seat; with shorts or a bikini it stops short of the waistband, or the padding crumples the hem
+  fill(backS, crotchY - 0.06, sportTop ? bWaist - 0.075 : W8[1] === 's' ? waistY + 0.03 : lowY - 0.03, 0.15, REST.hips[0][2], 0.003, 1.8);
   if (BG === BODY.female) fill(-backS, REST.belly[1][1] - 0.03, shY - 0.04, 0.12, REST.chest[0][2], 0.006, 2.4);   // no cleavage: the top spans the bust
   geo.computeVertexNormals();
   for (let i = 0; i < pos.count; i++) if (!moved[i]) nrm.setXYZ(i, oldN[i * 3], oldN[i * 3 + 1], oldN[i * 3 + 2]);
@@ -1463,19 +1505,20 @@ function buildSkin(body, BG, REST, M, W8, sportTop, bk) {
     if (kind === 'uArm' || kind === 'fArm' || kind === 'hand') {
       const c = chainD(P, jj.sh, jj.el, jj.wr);
       wi = c.d < c.l1 * 0.2 ? 7 : c.d < c.l1 * 0.88 ? 8 : c.d < c.l1 + c.l2 * 0.12 ? 9 : c.d < c.l1 + c.l2 * 0.97 ? 10 : -1;
-    } else if (kind === 'thigh' || kind === 'shin' || kind === 'foot' || (kind === 'hips' && P.y < crotchY - 0.03 && Math.abs(P.x) > 0.05)) {
+    } else if (sportTop && !(kind === 'uArm' || kind === 'fArm' || kind === 'hand') && P.y < bWaist) {
+      return MI[P.y < briefTop(P.x, P.y, P.z) && P.y > legLine(P.x, P.y, P.z) ? 's' : 'k'];   // the bikini bottom
+    } else if ((kind === 'thigh' || kind === 'shin' || kind === 'foot' || (kind === 'hips' && P.y < crotchY - 0.03 && Math.abs(P.x) > 0.05)) && P.y < lowY) {
       const c = chainD(P, jj.hip, jj.kn, jj.an);
       wi = P.y < jj.an.y - 0.035 ? -1 : c.d < c.l1 * 0.84 ? 3 : c.d < c.l1 + c.l2 * 0.12 ? 4 : c.d < c.l1 + c.l2 * 0.88 ? 5 : 6;
     } else if (P.y > neckY) wi = -1;
     else if (sportTop) {   // boardies with a bikini top: full cups in front, halter straps up to the neck, a thin band round the back
-      if (P.y < waistY) return MI[W8[2]];
       const ax = Math.abs(P.x), front = P.z * -backS > REST.chest[0][2] * -backS - 0.01, strap = Math.abs(ax - 0.07) < 0.022 && P.y < neckY + 0.02;
       const on = front ? (P.y > botY && P.y < upY && ax < shX * 0.8) || (P.y >= upY && strap)
                        : Math.abs(P.y - (botY + 0.045)) < 0.03 || (P.y >= upY - 0.02 && strap);
       return MI[on ? 's' : 'k'];
     }
     else if (Math.abs(P.x) > shX * 0.85 && P.y > shY - 0.12) wi = 7;
-    else wi = P.y < waistY ? 2 : P.y < topY ? 1 : 0;
+    else wi = P.y < lowY ? 2 : P.y < topY ? 1 : 0;
     return MI[wi < 0 ? 'k' : W8[wi]];
   };
   // sort the triangles into skin, suit and shorts
@@ -1485,6 +1528,15 @@ function buildSkin(body, BG, REST, M, W8, sportTop, bk) {
     P3.set(pos.getX(a) + pos.getX(b) + pos.getX(c), pos.getY(a) + pos.getY(b) + pos.getY(c), pos.getZ(a) + pos.getZ(b) + pos.getZ(c)).divideScalar(3);
     const kind = kinds[a] === kinds[b] || kinds[a] === kinds[c] ? kinds[a] : kinds[b];
     lists[wearAt(P3, kind)].push(a, b, c);
+  }
+  if (!sportTop && lists[2].length) {
+    const nn = geo.attributes.normal, done = new Uint8Array(pos.count);
+    for (const i of lists[2]) {
+      if (done[i]) continue; done[i] = 1;
+      P3.set(pos.getX(i), pos.getY(i), pos.getZ(i));
+      const below = clamp((crotchY - 0.02 - P3.y) / 0.22, 0, 1), off = 0.007 + 0.022 * below;
+      pos.setXYZ(i, P3.x + nn.getX(i) * off, P3.y + nn.getY(i) * off * 0.3, P3.z + nn.getZ(i) * off);
+    }
   }
   geo.setIndex([].concat(lists[0], lists[1], lists[2]));
   geo.clearGroups();
@@ -1826,7 +1878,7 @@ function dressSurfer(g, r) {
   }
   // head: built facing -z. A low-poly 90s head with its face painted on in pixels
   body.add(R.head);
-  M.face = new THREE.MeshStandardMaterial({ map: retroFaceTex(r), flatShading: true, roughness: 0.75, metalness: 0 });
+  M.face = new THREE.MeshStandardMaterial({ map: retroFaceTex(r), flatShading: true, roughness: 0.7, metalness: 0, envMap: ENV, envMapIntensity: 0.45 });   // lit like the body's skin so the two match
   mesh(retroHeadGeo(r.nose), M.face, R.head);
   const hood = hoodOn(r);
   ud.hoodOn = hood;
@@ -1848,7 +1900,7 @@ function dressSurfer(g, r) {
     ud.skin = buildSkin(body, BG, BODY_REST[curvy ? 'female' : 'male'], M, W8, curvy && r.wear === 'trunks', bk);
     for (const k in R) if (k !== 'head' && k !== 'neck' && R[k] && R[k].isMesh) R[k].visible = false;   // the simple shapes still carry the pose, unseen
     R.neck.geometry.dispose();   // the body stops at the base of the neck; the rig's neck, thick at the base and slim under the jaw, joins it to the head
-    R.neck.geometry = lathe([[0.07, -0.5], [0.062, -0.15], [0.052, 0.25], [0.04, 0.5]], bk > 1 ? 1.05 : 1, 18);
+    R.neck.geometry = lathe([[0.058, -0.5], [0.051, -0.15], [0.045, 0.25], [0.04, 0.5]], bk > 1 ? 1.04 : 1, 18);
   }
   poseRig(g);
 }
@@ -1934,7 +1986,7 @@ function poseRig(g) {
   }
   J.neckTop.copy(J.chest).addScaledVector(J.spine2, g.userData.legend ? 0.13 : 0.085);   // only the legends get the long, proud neck
   seg(R.neck, _a.copy(J.chest).addScaledVector(J.spine2, 0.02), _b.copy(J.neckTop).addScaledVector(J.spine2, 0.035));   // runs up inside the head so there's never a gap under the jaw
-  J.headC.copy(J.neckTop).addScaledVector(_a.set(J.spine2.x * 0.5, 1, J.spine2.z * 0.35).normalize(), 0.105);
+  J.headC.copy(J.neckTop).addScaledVector(_a.set(J.spine2.x * 0.5, 1, J.spine2.z * 0.35).normalize(), 0.082);   // the jaw sits down close over the neck
   R.head.position.copy(J.headC);
   // the head stays level and steady whatever the board and body are doing: eyes on the line
   R.head.rotation.set(-P.bend * 0.35 + (P.headDown || 0) + ang * 0.5 + (P.curl || 0) * 0.6, P.look, 0, 'YXZ');   // chin lifts a little as the back bends so the eyes stay level
