@@ -2727,4 +2727,103 @@ requestAnimationFrame(frame);
 })();
 </script>
 
+<!-- on-screen controls for phones and tablets: ▲ ▼ buttons (or a full stick), Pump, Stall / Grab and pause.
+     They press the same keys the keyboard does, so the game itself doesn't change. -->
+<style>
+.vp{display:none}
+body.vp-touch .vp:not(.vp-hide){display:block}
+.vp > *{position:fixed;z-index:40;touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
+.vp-b{appearance:none;border:2px solid rgba(245,240,228,.45);border-radius:50%;background:rgba(18,16,42,.5);color:#f5f0e4;
+  font:500 12px/1.2 "DM Mono",ui-monospace,monospace;letter-spacing:.08em;text-transform:uppercase;display:flex;align-items:center;justify-content:center;text-align:center;padding:0}
+.vp-b.on{background:#ffd27a;color:#12102a;border-color:#ffd27a}
+.vp-ud{left:max(20px,env(safe-area-inset-left,0px) + 14px);width:78px;height:78px;border-radius:14px;font-size:26px}
+.vp-up{bottom:calc(env(safe-area-inset-bottom,0px) + 112px)}.vp-down{bottom:calc(env(safe-area-inset-bottom,0px) + 22px)}
+.vp-stick{left:max(20px,env(safe-area-inset-left,0px) + 14px);bottom:calc(env(safe-area-inset-bottom,0px) + 22px);width:136px;height:136px;border-radius:50%;
+  background:radial-gradient(circle,rgba(18,16,42,.18),rgba(18,16,42,.42));border:2px solid rgba(245,240,228,.35)}
+.vp-knob{position:absolute;left:50%;top:50%;width:58px;height:58px;margin:-29px 0 0 -29px;border-radius:50%;background:rgba(245,240,228,.8);pointer-events:none}
+.vp-stick.on{border-color:#ffd27a}.vp-stick.on .vp-knob{background:#ffd27a}
+.vp-pump{right:max(20px,env(safe-area-inset-right,0px) + 14px);bottom:calc(env(safe-area-inset-bottom,0px) + 26px);width:86px;height:86px;font-size:13px}
+.vp-stall{right:max(118px,env(safe-area-inset-right,0px) + 112px);bottom:calc(env(safe-area-inset-bottom,0px) + 18px);width:70px;height:70px;font-size:10px}
+.vp-pause{right:16px;top:calc(env(safe-area-inset-top,0px) + 104px);width:40px;height:40px;border-radius:4px;font-size:14px}
+body.vp-flip .vp-ud,body.vp-flip .vp-stick{left:auto;right:max(20px,env(safe-area-inset-right,0px) + 14px)}
+body.vp-flip .vp-pump{right:auto;left:max(20px,env(safe-area-inset-left,0px) + 14px)}
+body.vp-flip .vp-stall{right:auto;left:max(118px,env(safe-area-inset-left,0px) + 112px)}
+body.vp-stickmode .vp-ud{display:none}body:not(.vp-stickmode) .vp-stick{display:none}
+</style>
+<div class="vp" id="vpPad">
+  <button class="vp-b vp-ud vp-up" type="button" data-k="ArrowUp" aria-label="Up the face">▲</button>
+  <button class="vp-b vp-ud vp-down" type="button" data-k="ArrowDown" aria-label="Down the face">▼</button>
+  <div class="vp-stick" aria-label="Steer"><div class="vp-knob"></div></div>
+  <button class="vp-b vp-stall" type="button" data-k="Shift">Stall<br>/ Grab</button>
+  <button class="vp-b vp-pump" type="button" data-k=" ">Pump</button>
+  <button class="vp-b vp-pause" type="button" data-tap="p" aria-label="Pause">II</button>
+</div>
+<script>
+(() => {
+  const key = (k, down) => window.dispatchEvent(new KeyboardEvent(down ? 'keydown' : 'keyup', { key: k }));
+  const body = document.body, pad = document.getElementById('vpPad');
+  const touch = () => body.classList.add('vp-touch');
+  if (matchMedia('(pointer: coarse)').matches || navigator.maxTouchPoints > 0 && !matchMedia('(pointer: fine)').matches) touch();
+  addEventListener('pointerdown', e => { if (e.pointerType === 'touch') touch(); }, true);
+  let style = 'ud', side = 'left';
+  try { style = localStorage.getItem('dawnpatrol.padStyle') || 'ud'; side = localStorage.getItem('dawnpatrol.padSide') === 'right' ? 'right' : 'left'; } catch (e) {}
+  const save = () => { try { localStorage.setItem('dawnpatrol.padStyle', style); localStorage.setItem('dawnpatrol.padSide', side); } catch (e) {} };
+  const STYLES = [['ud', '▲ ▼ buttons'], ['stick', 'Full stick'], ['off', 'Hidden']];
+  const rows = [];
+  const ui = () => {
+    body.classList.toggle('vp-flip', side === 'right');
+    body.classList.toggle('vp-stickmode', style === 'stick');
+    pad.classList.toggle('vp-hide', style === 'off');
+    for (const r of rows) {
+      r.querySelectorAll('[data-v]').forEach(b => b.setAttribute('aria-pressed', b.dataset.v === style ? 'true' : 'false'));
+      r.querySelector('.vp-side').textContent = 'Move to the ' + (side === 'right' ? 'left' : 'right');
+      r.querySelector('.vp-sidename').textContent = side === 'right' ? 'Steering on the right' : 'Steering on the left';
+    }
+  };
+  // settings in the main menu and the pause screen
+  const addRow = before => {
+    if (!before) return;
+    const wrap = document.createElement('div');
+    wrap.innerHTML = '<div class="opt"><span>On-screen controls</span><div class="chips"></div></div>' +
+      '<div class="who"><span>Controls side <b class="vp-sidename"></b></span><button class="chip vp-side" type="button"></button></div>';
+    const chips = wrap.querySelector('.chips');
+    for (const [v, l] of STYLES) {
+      const b = document.createElement('button'); b.type = 'button'; b.className = 'chip'; b.dataset.v = v; b.textContent = l;
+      b.addEventListener('click', () => { style = v; save(); ui(); });
+      chips.appendChild(b);
+    }
+    wrap.querySelector('.vp-side').addEventListener('click', () => { side = side === 'right' ? 'left' : 'right'; save(); ui(); });
+    while (wrap.firstChild) { const n = wrap.firstChild; before.parentNode.insertBefore(n, before); }
+    rows.push(before.parentNode);
+  };
+  addRow(document.getElementById('startBtn'));
+  addRow(document.getElementById('resumeBtn'));
+  ui();
+  // hold buttons
+  pad.querySelectorAll('[data-k]').forEach(el => {
+    let pid = null;
+    el.addEventListener('pointerdown', e => { e.preventDefault(); pid = e.pointerId; try { el.setPointerCapture(pid); } catch (err) {} el.classList.add('on'); key(el.dataset.k, true); });
+    const up = e => { if (e.pointerId !== pid) return; pid = null; el.classList.remove('on'); key(el.dataset.k, false); };
+    el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up);
+    el.addEventListener('contextmenu', e => e.preventDefault());
+  });
+  pad.querySelector('[data-tap]').addEventListener('click', e => { key('p', true); key('p', false); });
+  // the stick: 8 ways, so diagonals work
+  const stick = pad.querySelector('.vp-stick'), knob = pad.querySelector('.vp-knob'), held = {};
+  let sid = null;
+  const set = (k, on) => { if (!!held[k] !== on) { held[k] = on; key(k, on); } };
+  const move = e => {
+    const b = stick.getBoundingClientRect(), R = b.width / 2;
+    let x = (e.clientX - b.left - R) / R, y = (e.clientY - b.top - R) / R;
+    const m = Math.hypot(x, y); if (m > 1) { x /= m; y /= m; }
+    knob.style.transform = `translate(${x * R * 0.62}px,${y * R * 0.62}px)`;
+    const on = m > 0.3;
+    set('ArrowLeft', on && x < -0.4); set('ArrowRight', on && x > 0.4); set('ArrowUp', on && y < -0.4); set('ArrowDown', on && y > 0.4);
+  };
+  stick.addEventListener('pointerdown', e => { e.preventDefault(); sid = e.pointerId; try { stick.setPointerCapture(sid); } catch (err) {} stick.classList.add('on'); move(e); });
+  stick.addEventListener('pointermove', e => { if (e.pointerId === sid) move(e); });
+  const end = e => { if (e.pointerId !== sid) return; sid = null; stick.classList.remove('on'); knob.style.transform = ''; for (const k of ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown']) set(k, false); };
+  stick.addEventListener('pointerup', end); stick.addEventListener('pointercancel', end);
+})();
+</script>
 </body></html>
