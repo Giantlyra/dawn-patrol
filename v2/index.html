@@ -173,6 +173,7 @@ body.touch .keys{display:none}
     <h1>Dawn Patrol</h1>
     <p class="lede">The set is standing up on the peak. Stay ahead of the whitewater, pump for speed, launch off the lip and tuck into the barrel.</p>
     <ul class="how">
+      <li><span>Controller</span><span>Plug in or pair a game controller: stick or D-pad steers, <b>A</b> pumps (and starts), <b>B</b> or a trigger stalls and grabs, <b>Y</b> changes view, <b>Start</b> pauses.</span></li>
       <li class="touchonly"><span>On a phone</span><span>Left thumb stick = the arrow keys (diagonals work). <b>Pump</b> = Space, <b>Stall / Grab</b> = Shift. You can also drag a finger on the wave to steer toward it.</span></li>
       <li><span>Takeoff</span><span>You drop in at the peak. Press <kbd>←</kbd> or <kbd>→</kbd> to go left or right; the wave peels the way you pick.</span></li>
       <li><span><kbd>↑</kbd> <kbd>↓</kbd> rail turns</span><span>Hold <kbd>↑</kbd> to aim up the face, <kbd>↓</kbd> to aim down it: the board rolls onto its rail, arcs round to that line and holds it. Hold longer for a steeper line; add <kbd>←</kbd>/<kbd>→</kbd> for a diagonal. Turns are long arcs at speed and tight when you're slow. <kbd>←</kbd> <kbd>→</kbd> point you along the wave either way.</span></li>
@@ -1935,6 +1936,34 @@ addEventListener('pointerdown', e => { if (e.pointerType === 'touch') isTouch();
   for (const el of [stick, $('tPump'), $('tStall')]) el.addEventListener('contextmenu', e => e.preventDefault());
   $('tPause').addEventListener('click', () => { if (mode === 'play' && S.alive) pause(); else if (mode === 'paused') resume(); });
 })();
+
+// ---------- game controller (Xbox, PlayStation, Switch Pro, or a phone clip-on controller) ----------
+// Left stick or D-pad = arrow keys, A / Cross = pump (Space), B / Circle or any shoulder or trigger = stall / grab (Shift),
+// Y / Triangle = change view, Start / Options = pause. It just presses the same keys, so everything else works unchanged.
+const padPrev = {};
+function pollPad() {
+  const list = navigator.getGamepads ? navigator.getGamepads() : [];
+  let gp = null;
+  for (const g of list) if (g && g.connected) { gp = g; break; }
+  const b = i => !!(gp && gp.buttons[i] && gp.buttons[i].pressed);
+  const ax = gp ? gp.axes[0] || 0 : 0, ay = gp ? gp.axes[1] || 0 : 0;
+  const now = {
+    arrowleft: ax < -0.4 || b(14), arrowright: ax > 0.4 || b(15), arrowup: ay < -0.4 || b(12), arrowdown: ay > 0.4 || b(13),
+    ' ': b(0), shift: b(1) || b(4) || b(5) || b(6) || b(7), view: b(3), start: b(9),
+  };
+  for (const k in now) {
+    if (now[k] === !!padPrev[k]) continue;   // only act on changes, so the keyboard and the pad don't fight
+    padPrev[k] = now[k];
+    if (k !== 'view' && k !== 'start') keys[k] = now[k];
+    if (!now[k] || mode === 'rider') continue;
+    if (k === ' ' || k === 'start') {
+      if (mode === 'paused') resume();
+      else if ((mode === 'menu' || mode === 'over') && canStart) start();
+      else if (mode === 'play' && S.alive) { if (k === 'start') pause(); else S.pumpReq = true; }
+    } else if (k === 'view') setView(viewIdx + 1);
+  }
+}
+addEventListener('gamepadconnected', () => msg('Controller connected', 'Stick to steer · A pump · B or triggers stall/grab · Y view'));
 
 $('startBtn').addEventListener('click', start);
 $('againBtn').addEventListener('click', start);
@@ -3744,6 +3773,7 @@ function frame() {
   const now = performance.now();
   const dt = clamp((now - last) / 1000, 0, 0.033);
   last = now;
+  pollPad();
   update(dt);
   renderer.render(scene, camera);
   updateHud();
