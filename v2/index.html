@@ -199,7 +199,7 @@ body:not(.touch) .padrow{display:none}
       <li><span>Lip grind</span><span>In a barrel section, ride up onto the pitching lip and slide along the top of it. Press <kbd>↓</kbd> to drop off the front into the face before the curl catches you.</span></li>
       <li><span>Wave tricks</span><span>Turn hard off the top at speed and the fins let go a little: the tail skids and sprays (chip the lip). Carve hard low on the face for a bottom turn that fires you up faster. Bury a full-rail carve through the middle of the face = gouge. Ride the top of the breaking part = floater. Turns back into the curl are all yours to time. <kbd>Shift</kbd> in a hard turn = layback.</span></li>
       <li><span>Rocks</span><span>Carve round them or air over them. When a barrel section starts the reef drains, then the surge buries it in a boil: hit the boil fast and it launches you.</span></li>
-      <li><span>Barrel section</span><span>When the wave starts pitching, hold <kbd>Shift</kbd> to stall so the lip throws over you. Ride low inside: your rider tucks down small under the lip.</span></li>
+      <li><span>Barrel section</span><span>When the wave starts pitching, hold <kbd>Shift</kbd> to stall so the lip throws over you. Ride low inside: your rider tucks down small and grabs the outside rail (grab rail) to stay locked in. Hold <kbd>Shift</kbd> in there to drag a hand in the face instead and slow down.</span></li>
       <li><span><kbd>C</kbd> or <kbd>1</kbd>–<kbd>4</kbd></span><span>Switch view: beach, chase, first person, drone.</span></li>
     </ul>
     <div class="who"><span>Rider <b id="whoName"></b></span><button class="chip" id="riderBtn" type="button">Change rider</button></div>
@@ -1951,13 +1951,15 @@ function poseRig(g) {
   _b.lerp(_c, P.drag);
   // grabs: which rail and where depends on the grab (indy, tail, stalefish); slob is the front hand
   const gx = P.gx === undefined ? mid - 0.06 : P.gx, gz = P.gz === undefined ? -0.25 : P.gz;
-  _c.set(gx, deckY(gx) + 0.02, gz);
+  const rl = P.rail || 0;   // grab rail: the wrist sits just over and outside the rail so the fingers wrap down round it
+  _c.set(gx, deckY(gx) + 0.02 + 0.075 * rl, gz * (1 + 0.12 * rl));
   _b.lerp(_c, P.grab);
   J.handB.copy(_b);
   if (P.lay > 0.02) {   // layback: back hand planted on the water behind you, front arm thrown out over the nose
     _c.copy(J.hip).add(_a.set(-0.25, -0.55, 0.45)); J.handB.lerp(_c, P.lay);
     _c.copy(J.shF).add(_a.set(0.45, 0.25, 0.05)); J.handF.lerp(_c, P.lay);
   }
+  if (rl > 0.01) { _c.copy(J.shF).add(_a.set(0.4, -0.16, -0.08)); J.handF.lerp(_c, rl); }   // lead arm low and forward, pointing at the way out
   if (P.fgrab) { _c.set(fF - 0.08, deckY(fF - 0.08) + 0.02, -0.25); J.handF.lerp(_c, P.fgrab); }
   if (P.claim > 0.01) {   // claim: fists up over the head (both, or one punched up)
     const pump = 0.06 * Math.sin(T * 14);
@@ -2788,7 +2790,7 @@ function updateFall(dt) {
   const t = F.t, loose = F.under > 0 ? 0.4 : 1;
   P.spread = 0.6 + 0.4 * Math.sin(t * 9) * loose; P.reach = 0.5 * Math.sin(t * 7.3) * loose;
   P.crouch = 0.45 + 0.3 * Math.sin(t * 5.1) * loose; P.tuck = F.under > 0 ? 0.6 : 0.2;
-  P.grab = 0; P.drag = 0; P.twist = 0.4 * Math.sin(t * 4.2); P.look = Math.sin(t * 3) * 0.8; P.bend = 0.5;
+  P.grab = 0; P.drag = 0; P.rail = 0; P.twist = 0.4 * Math.sin(t * 4.2); P.look = Math.sin(t * 3) * 0.8; P.bend = 0.5;
   poseRig(player);
   // the leash goes tight: the board can only get so far from your ankle before it is yanked back
   const ankle = mzv(_la.copy(J.footB).sub(COM)).applyQuaternion(F.rq).add(F.rp);
@@ -3823,6 +3825,7 @@ function update(dt) {
       P.spread += ((S.grabbing ? 0.2 : 0.75) - P.spread) * k;   // arms out for balance unless grabbing
       P.tuck += (0 - P.tuck) * k;
       P.grab += (((S.grabbing && S.grabType !== 'Slob') ? 1 : 0) - P.grab) * k;
+      P.rail = (P.rail || 0) * (1 - k);
       if (cross > 0.1) {   // the cross: legs straight, arms flung out wide, chest open
         P.crouch += (0.02 - P.crouch) * Math.min(1, dt * 14);
         P.spread += (1 - P.spread) * Math.min(1, dt * 14);
@@ -3911,8 +3914,13 @@ function update(dt) {
       spr('spread', (S.grinding ? 0.9 : tubed ? 0.15 : S.load * (0.5 + 0.5 * FL) + (1 - FL) * 0.75) * (1 - 0.8 * trim));   // a beginner holds the arms out stiff for balance
       P.headDown = (1 - FL) * 0.35;   // eyes on the board instead of the wave
       P.tuck += ((tubed ? 1 : 0) - P.tuck) * k;
-      P.drag += ((tubed || stalling ? 1 : bottom * 0.75) - P.drag) * k;
-      P.grab += (0 - P.grab) * k;
+      // grab rail: deep in the barrel the trailing hand holds the outside rail (the heel rail frontside, the toe rail
+      // backside) to keep the board locked in low and tight; stalling it drags in the face to slow down instead
+      const railGrab = tubed && !stalling;
+      if (railGrab) { const fs = (player.userData.mz || 1) > 0; P.gx = (BD.feet[0] + BD.feet[1]) / 2 - (fs ? 0.1 : 0.04); P.gz = fs ? 0.24 : -0.25; }
+      P.drag += ((stalling ? 1 : railGrab ? 0 : bottom * 0.75) - P.drag) * k;
+      P.grab += ((railGrab ? 1 : 0) - P.grab) * k;
+      P.rail = (P.rail || 0) + ((railGrab ? 1 : 0) - (P.rail || 0)) * k;
       spr('twist', clamp(S.turn * (0.06 + 0.14 * FL) - S.lean * 0.3, -0.6, 0.6));   // shoulders lead the hips into the turn
       spr('hipZ', (S.laying ? 0.22 : (1 - FL) * clamp(-S.lean * 0.1, -0.12, 0.12)) + (1 - FL) * 0.025 * Math.sin(T * 5.3));   // beginners stiffen against the rail
       spr('ang', FL * clamp(S.lean, -0.9, 0.9) * (S.laying ? 0.3 : 1));   // surfers in flow angulate: hips into the turn, chest stays up
