@@ -86,7 +86,7 @@ kbd{font-family:var(--mono);font-size:11px;border:1px solid rgba(245,240,228,.4)
 @media (max-width:760px){#rider{padding-left:16px}#rider > .card{margin:auto auto 0}#rider .card{max-height:58vh}}
 #rider h1{font-size:clamp(30px,8vw,42px)}
 .presets{display:flex;gap:6px;overflow-x:auto;padding-bottom:6px;scrollbar-width:thin}
-.chips,.sw{display:flex;flex-wrap:wrap;gap:6px}
+.chips,.sw{display:flex;flex-wrap:wrap;gap:6px;align-items:flex-start;align-content:flex-start}
 .sw button{appearance:none;width:26px;height:26px;border-radius:50%;border:2px solid rgba(245,240,228,.22);cursor:pointer;padding:0}
 .sw button[aria-pressed="true"]{border-color:var(--sun);box-shadow:0 0 0 2px var(--ink) inset}
 .opt{display:grid;gap:6px}
@@ -212,13 +212,22 @@ body.touch .keys{display:none}
     <div class="opt"><span>Skin</span><div class="sw" id="rSkin"></div></div>
     <div class="opt"><span>Hair</span><div class="chips" id="rHair"></div></div>
     <div class="opt"><span>Hair colour</span><div class="sw" id="rHairC"></div></div>
+    <div class="opt"><span>Eyes</span><div class="chips" id="rEyes"></div></div>
+    <div class="opt"><span>Eye colour</span><div class="sw" id="rEyeC"></div></div>
+    <div class="opt"><span>Brows</span><div class="chips" id="rBrows"></div></div>
     <div class="duo">
-      <div class="opt"><span>Face</span><div class="chips" id="rFace"></div></div>
-      <div class="opt"><span>Body</span><div class="chips" id="rFrame"></div></div>
+      <div class="opt"><span>Nose</span><div class="chips" id="rNose"></div></div>
+      <div class="opt"><span>Mouth</span><div class="chips" id="rMouth"></div></div>
     </div>
+    <div class="duo">
+      <div class="opt"><span>Facial hair</span><div class="chips" id="rFace"></div></div>
+      <div class="opt"><span>Extras</span><div class="chips" id="rExtra"></div></div>
+    </div>
+    <div class="opt"><span>Body</span><div class="chips" id="rFrame"></div></div>
     <div class="opt"><span>Build</span><div class="chips" id="rBuild"></div></div>
     <div class="opt"><span>Wear</span><div class="chips" id="rWear"></div></div>
     <div class="opt"><span>Suit colour</span><div class="sw" id="rSuitC"></div></div>
+    <div class="opt"><span>Wetsuit hood</span><div class="chips" id="rHood"></div></div>
     <div class="opt"><span>Board</span><div class="chips" id="rBoard"></div><p class="hint" id="rBoardHint"></p></div>
     <div class="opt"><span>Board colour</span><div class="sw" id="rBoardC"></div></div>
     <div class="row"><button class="chip" id="rRandom" type="button">Surprise me</button><button class="go" id="rDone" type="button">Done</button></div>
@@ -365,6 +374,7 @@ function updateSnow(dt) {
 // sky, fog, sun and snow follow the level
 function applyAtmos() {
   const ice = !!LV.ice;
+  try { if (player.userData.hoodOn !== hoodOn(rider)) dressSurfer(player, rider); } catch (e) {}   // pull the hood up on cold days
   scene.background = ice ? SKY_ICE : SKY_DAWN;
   const fc = ice ? 0xb9c8d3 : 0xd98a6e;
   scene.fog.color.set(fc); U.fogCol.value.set(fc);
@@ -864,6 +874,14 @@ const HAIRS = [['buzz', 'Buzz cut'], ['crop', 'Short crop'], ['fade', 'High-top 
   ['twists', 'Twists'], ['locs', 'Locs'], ['locsUp', 'Locs up'], ['braids', 'Box braids'], ['cornrows', 'Cornrows'], ['bantu', 'Bantu knots'],
   ['curls', 'Curls'], ['shag', 'Shaggy'], ['long', 'Long'], ['pony', 'Ponytail'], ['bun', 'Top knot'], ['bald', 'Shaved']];
 const FACES = [['clean', 'Clean'], ['stubble', 'Stubble'], ['beard', 'Beard']];
+// retro face: everything below is painted pixel by pixel into the head's texture
+const EYES = [['almond', 'Almond'], ['round', 'Round'], ['narrow', 'Narrow'], ['big', 'Big'], ['sleepy', 'Sleepy']];
+const EYEC = ['#3a2414', '#1c120b', '#6b4a22', '#4d6b35', '#3f6f9a', '#71808a'];
+const BROWS = [['soft', 'Soft'], ['thick', 'Thick'], ['arched', 'Arched'], ['straight', 'Straight'], ['thin', 'Thin']];
+const NOSES = [['straight', 'Straight'], ['button', 'Button'], ['wide', 'Wide'], ['long', 'Long']];
+const MOUTHS = [['smile', 'Smile'], ['grin', 'Grin'], ['flat', 'Calm'], ['smirk', 'Smirk'], ['shout', 'Stoked']];
+const EXTRAS = [['none', 'None'], ['freckles', 'Freckles'], ['zinc', 'Zinc'], ['shades', 'Shades'], ['blush', 'Sunburn']];
+const HOODS = [['auto', 'Cold days'], ['on', 'Always'], ['off', 'Never']];
 const FRAMES = [['broad', 'Broad'], ['curvy', 'Curvy']];
 const BUILDS = [['lean', 'Lean'], ['athletic', 'Athletic'], ['strong', 'Strong']];
 const WEARS = [['full', 'Full suit'], ['spring', 'Spring suit'], ['vest', 'Rash vest'], ['trunks', 'Boardies']];
@@ -961,6 +979,12 @@ const fixRider = () => {
   rider.hair = pick(rider.hair, HAIRS, 'crop'); rider.face = pick(rider.face, FACES, 'clean'); rider.frame = pick(rider.frame, FRAMES, 'broad');
   rider.build = pick(rider.build, BUILDS, 'athletic'); rider.wear = pick(rider.wear, WEARS, 'full');
   rider.board = pick(rider.board, BOARD_TYPES, 'hp');
+  let hs = 7; for (const ch of rider.name) hs = (hs * 31 + ch.charCodeAt(0)) >>> 0;
+  const byName = (list, k) => list[(hs >>> k) % list.length][0];
+  rider.eyes = pick(rider.eyes, EYES, byName(EYES, 1)); rider.brows = pick(rider.brows, BROWS, byName(BROWS, 4));
+  rider.nose = pick(rider.nose, NOSES, byName(NOSES, 7)); rider.mouth = pick(rider.mouth, MOUTHS, byName(MOUTHS.slice(0, 4), 10));
+  rider.extra = pick(rider.extra, EXTRAS, 'none'); rider.hood = pick(rider.hood, HOODS, 'auto');
+  rider.eyeC = Number.isInteger(rider.eyeC) ? clamp(rider.eyeC, 0, EYEC.length - 1) : rider.skin <= 2 && rider.hairC >= 5 ? 4 : rider.skin <= 4 ? 2 : 0;
 };
 fixRider();
 
@@ -1498,11 +1522,137 @@ function shapeHips(g, glute) {
   return g;
 }
 
+// ---------- RETRO HEAD: a low-poly 90s console head with the face painted into a small pixel texture ----------
+// The texture wraps round the head like a label (face in the middle), drawn per rider from the face options,
+// and shown with nearest filtering so every pixel stays a crisp square.
+const RT = { W: 128, H: 64, y0: -0.135, y1: 0.12 };
+function retroHeadGeo(nose) {
+  const pos = [];
+  const add = g => { const P = g.index ? g.toNonIndexed().attributes.position : g.attributes.position; for (let i = 0; i < P.count; i++) pos.push(P.getX(i), P.getY(i), P.getZ(i)); };
+  const head = new THREE.SphereGeometry(1, 12, 10), P = head.attributes.position;
+  for (let i = 0; i < P.count; i++) {
+    const dx = P.getX(i), dy = P.getY(i), dz = P.getZ(i);
+    const jaw = smooth(clamp((-dy - 0.1) / 0.8, 0, 1));
+    const x = dx * 0.079 * (1 - jaw * 0.24);
+    const y = dy * (dy > 0 ? 0.104 : 0.118) + 0.008;
+    let z = dz * (dz > 0 ? 0.1 : 0.086) + 0.006;
+    if (dz < 0 && dy < -0.3) z -= 0.012 * jaw;   // the chin comes forward a little
+    P.setXYZ(i, x, y, z);
+  }
+  add(head);
+  // the nose: a little wedge standing off the face
+  const NS = { straight: [0.016, 0.0085, 0.044], button: [0.011, 0.009, 0.034], wide: [0.013, 0.0135, 0.04], long: [0.02, 0.0085, 0.052] }[nose] || [0.016, 0.0085, 0.044];
+  const [out, w, len] = NS, zf = -0.079, yb = 0.006, yt = yb - len, yn = yt - 0.004;
+  const B = [0, yb, zf + 0.004], T = [0, yt, zf - out], L = [-w, yn, zf + 0.003], R = [w, yn, zf + 0.003], C = [0, yn, zf - out * 0.45];
+  for (const t of [[B, T, L], [B, R, T], [L, T, C], [T, R, C]]) for (const v of t) pos.push(...v);
+  // ears: chunky flattened blocks
+  for (const sx of [1, -1]) add(xf(new THREE.SphereGeometry(1, 5, 4), sx * 0.077, -0.004, 0.012, 0.011, 0.026, 0.017, 0, sx * 0.25, 0));
+  // texture coordinates: angle round the head and height, unwrapped across the seam at the back
+  const uv = [];
+  for (let i = 0; i < pos.length; i += 9) {
+    const us = [0, 1, 2].map(k => 0.5 + Math.atan2(pos[i + k * 3], -pos[i + k * 3 + 2]) / TAU);
+    if (Math.max(...us) - Math.min(...us) > 0.5) for (let k = 0; k < 3; k++) if (us[k] < 0.5) us[k] += 1;
+    for (let k = 0; k < 3; k++) uv.push(us[k], (pos[i + k * 3 + 1] - RT.y0) / (RT.y1 - RT.y0));
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.computeVertexNormals();
+  return g;
+}
+function retroFaceTex(r) {
+  const W = RT.W, H = RT.H, cv2 = document.createElement('canvas');
+  cv2.width = W; cv2.height = H;
+  const x = cv2.getContext('2d');
+  const sk = new THREE.Color(SKIN[r.skin]), hc = new THREE.Color(HAIRC[r.hairC]);
+  const col = (c, f = 1, mix, m = 0) => { const k = c.clone(); if (mix) k.lerp(new THREE.Color(mix), m); k.multiplyScalar(f); k.r = Math.min(1, k.r); k.g = Math.min(1, k.g); k.b = Math.min(1, k.b); return '#' + k.getHexString(); };
+  const SKN = col(sk), SH = col(sk, 0.84), DEEP = col(sk, 0.66), LIT = col(sk, 1, '#fff4e8', 0.16);
+  const LIP = col(sk, 0.86, '#9a4a4a', 0.42), LINE = col(sk, 0.42, '#5a1a1a', 0.35);
+  const fair = r.hairC >= 5 && r.hairC <= 7;
+  const BROW = col(hc, fair ? 0.62 : 0.9), LASH = '#160e0a', HAIR = col(hc, 0.95);
+  const px = (c, X, Y, w = 1, h = 1) => { x.fillStyle = c; x.fillRect(X, Y, w, h); };
+  // both sides at once: X is measured out from the middle of the face, the left side is the mirror image
+  const CX = W / 2;
+  const pair = (c, X, Y, w = 1, h = 1) => { px(c, CX + X, Y, w, h); px(c, CX - X - w, Y, w, h); };
+  const row = y => Math.round(H * (1 - (y - RT.y0) / (RT.y1 - RT.y0)));
+  const EY = row(0.014), BR = EY - 4, NO = row(-0.034), MO = row(-0.058), CH = row(-0.1);
+  px(SKN, 0, 0, W, H);
+  // shading: under the jaw, the sides of the face, the eye sockets, a lit forehead and nose bridge
+  px(SH, 0, CH + 1, W, H); px(DEEP, CX - 18, CH + 3, 36, 2);
+  for (let y = EY + 3; y < CH + 1; y++) pair(SH, y > MO ? 12 : 14, y, 4);   // the cheeks turning away from the light
+  pair(SH, 2, EY - 2, 7); px(LIT, CX - 1, BR - 4, 2, 9); px(LIT, CX - 6, BR - 7, 12, 2);
+  px(SH, CX + 1, EY + 2, 1, NO - EY - 2); pair(SH, 1, NO + 1, 2); px(DEEP, CX - 3, NO + 1, 1, 1); px(DEEP, CX + 2, NO + 1, 1, 1);
+  px(SH, CX - 2, MO + 3, 4, 1);   // the dip under the lower lip
+  // facial hair: stubble is a dithered shadow over the jaw, a beard is solid hair with a moustache
+  if (r.face === 'stubble') {
+    const ST = col(sk, 0.74, HAIRC[r.hairC], 0.25);
+    for (let y = MO - 3; y <= CH + 1; y++) for (let X = -15; X <= 15; X++) {
+      if ((X * 2 + y * 3 + (X * y & 1)) % 3 || (y < MO - 1 && Math.abs(X) > 6) || (y < MO + 1 && Math.abs(X) > 13)) continue;
+      px(ST, CX + X, y);
+    }
+  } else if (r.face === 'beard') {
+    for (let y = NO + 2; y <= CH + 2; y++) {
+      const half = y < MO - 1 ? 7 : 16;
+      px(HAIR, CX - half, y, half * 2, 1);
+    }
+    for (let y = EY + 2; y < NO + 2; y++) pair(HAIR, 13, y, 4);
+    for (let y = CH + 3; y <= CH + 4; y++) px(HAIR, CX - 9, y, 18, 1);
+  }
+  // eyes: white, iris and pupil, a dark lash line on top
+  const ir = col(new THREE.Color(EYEC[r.eyeC])), irD = col(new THREE.Color(EYEC[r.eyeC]), 0.55), WH = '#efe9df';
+  const E = {
+    almond: () => { pair(WH, 4, EY, 5, 2); pair(ir, 5, EY, 2, 2); pair('#0b0806', 5, EY, 1, 1); pair(LASH, 3, EY - 1, 7); pair(LASH, 9, EY, 1); pair(SH, 5, EY + 2, 3); },
+    round: () => { pair(WH, 4, EY - 1, 4, 3); pair(ir, 5, EY - 1, 2, 3); pair('#0b0806', 5, EY, 1, 1); pair(LASH, 4, EY - 2, 4); pair(SH, 4, EY + 2, 4); },
+    narrow: () => { pair(WH, 4, EY, 5, 1); pair(ir, 5, EY, 2, 1); pair(LASH, 3, EY - 1, 7); pair(LASH, 9, EY - 1, 1); pair(SH, 4, EY + 1, 5); },
+    big: () => { pair(WH, 3, EY - 2, 6, 4); pair(ir, 4, EY - 1, 3, 3); pair(irD, 4, EY - 1, 3, 1); pair('#0b0806', 5, EY, 1, 2); pair('#ffffff', 4, EY, 1, 1); pair(LASH, 3, EY - 3, 6); pair(LASH, 9, EY - 3, 1, 2); },
+    sleepy: () => { pair(SH, 3, EY - 1, 7); pair(LASH, 3, EY, 7); pair(WH, 4, EY + 1, 5, 1); pair(ir, 5, EY + 1, 2, 1); }
+  };
+  (E[r.eyes] || E.almond)();
+  // brows
+  const BRW = {
+    soft: () => { pair(BROW, 2, BR, 7); pair(BROW, 2, BR + 1, 2); },
+    thick: () => { pair(BROW, 2, BR, 8, 2); },
+    arched: () => { pair(BROW, 2, BR + 1, 2); pair(BROW, 4, BR, 4); pair(BROW, 8, BR + 1, 2); },
+    straight: () => { pair(BROW, 2, BR + 1, 8); },
+    thin: () => { pair(col(hc, fair ? 0.75 : 1.1, SKIN[r.skin], 0.25), 3, BR, 6); }
+  };
+  (BRW[r.brows] || BRW.soft)();
+  // mouth
+  const MW = {
+    smile: () => { px(LINE, CX - 3, MO, 6); pair(LINE, 3, MO - 1, 1); px(LIP, CX - 2, MO + 1, 4); px(LIP, CX - 2, MO - 1, 4); },
+    grin: () => { px(LIP, CX - 3, MO - 1, 6); px('#f2ede2', CX - 3, MO, 6); pair(LINE, 3, MO - 1, 1, 2); px(LIP, CX - 2, MO + 1, 4); },
+    flat: () => { px(LINE, CX - 3, MO, 6); px(LIP, CX - 2, MO - 1, 4); px(LIP, CX - 2, MO + 1, 4); },
+    smirk: () => { px(LINE, CX - 3, MO, 5); px(LINE, CX + 2, MO - 1, 2); px(LIP, CX - 2, MO + 1, 4); px(LIP, CX - 2, MO - 1, 3); },
+    shout: () => { px(LIP, CX - 3, MO - 2, 6); px('#2a0e0e', CX - 3, MO - 1, 6, 3); px('#f2ede2', CX - 2, MO - 1, 4, 1); px('#a8484a', CX - 1, MO + 1, 2); px(LIP, CX - 2, MO + 2, 4); }
+  };
+  (MW[r.mouth] || MW.smile)();
+  if (r.face === 'beard') px(HAIR, CX - 4, MO - 2, 8);   // moustache over the top lip
+  // extras
+  if (r.extra === 'freckles') for (const [X, Y] of [[3, 1], [5, 2], [7, 1], [4, 3], [8, 3], [2, 4], [6, 4], [10, 2]]) pair(col(sk, 0.72, '#7a3f22', 0.3), X, NO - 5 + Y, 1);
+  else if (r.extra === 'zinc') { px('#f7f7f2', CX - 1, EY + 2, 3, NO - EY - 1); pair('#f7f7f2', 8, NO - 3, 3); pair('#f7f7f2', 9, NO - 1, 3); }
+  else if (r.extra === 'blush') { px(col(sk, 1, '#d8473a', 0.35), CX - 2, NO - 4, 4, 5); pair(col(sk, 1, '#d8473a', 0.28), 6, NO - 3, 5, 3); }
+  else if (r.extra === 'shades') { pair('#101418', 1, EY - 2, 11, 4); px('#101418', CX - 1, EY - 2, 2, 1); pair('#3fa7b5', 3, EY - 1, 2); pair('#ff7a59', 7, EY, 2); pair('#101418', 12, EY - 2, 4); }
+  const t = new THREE.CanvasTexture(cv2);
+  t.magFilter = THREE.NearestFilter; t.minFilter = THREE.NearestFilter; t.generateMipmaps = false;
+  t.wrapS = THREE.RepeatWrapping; t.own = true;
+  return t;
+}
+// a neoprene hood: the full suit carried up over the head, open round the face
+function hoodGeo() {
+  // a sphere with a round hole at one pole, turned so the hole faces forward and a little down, then stretched over the head
+  const g = new THREE.SphereGeometry(1, 14, 9, 0, TAU, 0.86, Math.PI - 0.86);
+  g.rotateX(-Math.PI / 2 - 0.26);
+  g.scale(0.094, 0.136, 0.106);
+  g.translate(0, -0.016, 0.014);
+  return g.toNonIndexed();
+}
+const hoodOn = r => r.hood === 'on' || (r.hood === 'auto' && !!(LV && LV.ice));
+
 function dressSurfer(g, r) {
   const ud = g.userData;
   if (ud.body) {
     g.remove(ud.body);
-    ud.body.traverse(o => { if (o.isMesh) { o.geometry.dispose(); [].concat(o.material).forEach(m => m.dispose()); } });
+    ud.body.traverse(o => { if (o.isMesh) { o.geometry.dispose(); [].concat(o.material).forEach(m => { if (m.map && m.map.own) m.map.dispose(); m.dispose(); }); } });
   }
   buildBoard(g, r);
   const curvy = r.frame === 'curvy', bk = BUILD_K[r.build];
@@ -1520,7 +1670,6 @@ function dressSurfer(g, r) {
     brow: new THREE.MeshStandardMaterial({ color: tone(hairC, r.hairC >= 5 && r.hairC <= 7 ? 0.7 : 0.95), roughness: 0.8 }),
     stub: new THREE.MeshStandardMaterial({ color: hairC, roughness: 0.85, transparent: r.face === 'stubble', opacity: r.face === 'stubble' ? 0.32 : 1, depthWrite: r.face !== 'stubble' })
   };
-  M.face = M.k.clone(); M.face.vertexColors = true;   // the head carries its lip tint in vertex colours
   const W8 = WEAR_MAP[r.wear], mat = i => M[W8[i]];
   const body = new THREE.Group();
   g.add(body);
@@ -1572,72 +1721,21 @@ function dressSurfer(g, r) {
     // with boardies, a sport top in the suit colour
     if (r.wear === 'trunks') { R.top = mesh(lathe([[0.146, -0.3], [0.15, -0.16], [0.163, -0.02], [0.174, 0.12], [0.172, 0.18]], 1.04 * shW * bk ** 0.5), M.s); R.top.userData.wz = 0.67; }
   }
-  // head: built facing -z
+  // head: built facing -z. A low-poly 90s head with its face painted on in pixels
   body.add(R.head);
-  const lipTint = new THREE.Color(skinC).lerp(new THREE.Color('#8e4646'), 0.5).multiplyScalar(0.72);
-  const sk = new THREE.Color(skinC);
-  const headM = mesh(headGeo(new THREE.Color(lipTint.r / Math.max(sk.r, 0.01), lipTint.g / Math.max(sk.g, 0.01), lipTint.b / Math.max(sk.b, 0.01)), r.face === 'stubble'), M.face, R.head);
-  // eyes: wet eyeballs set back in the sockets with the iris and pupil lying on the curve of the ball,
-  // and real lids: an almond opening that peaks toward the nose on top and dips toward the temple underneath
-  M.lid = M.k.clone(); M.lid.color.multiplyScalar(0.82); M.lid.side = THREE.DoubleSide;
-  M.lidLo = M.k.clone(); M.lidLo.side = THREE.DoubleSide;
-  M.lash = new THREE.MeshStandardMaterial({ color: 0x120c09, roughness: 0.7, side: THREE.DoubleSide });
-  M.cornea = new THREE.MeshPhysicalMaterial({ color: 0xffffff, roughness: 0.02, clearcoat: 1, clearcoatRoughness: 0, transparent: true, opacity: 0.12, envMap: ENV, envMapIntensity: 1.4 });
-  const ER = 0.0118, EY = 0.012, EZ = -0.066;
-  const cap = (r, ang, ex) => xf(new THREE.SphereGeometry(r, 28, 6, 0, Math.PI * 2, 0, ang), ex, EY, EZ, 1, 1, 1, -Math.PI / 2, 0, 0);
-  const lidGeo = (sx, upper, r0, t0, t1) => {
-    // a sheet over the ball from the lid margin back into the socket; (a, b) = across and up the ball
-    const NA = 26, NT = 7, pos = [], idx = [];
-    for (let i = 0; i <= NA; i++) for (let j = 0; j <= NT; j++) {
-      const a = -1.45 + 2.9 * i / NA, m = a * -sx, t = t0 + (t1 - t0) * j / NT;   // m > 0 toward the nose
-      const open = Math.max(0, Math.cos(Math.min(1, Math.abs(a) / 1.1) * Math.PI / 2));
-      const edge = upper ? -0.08 + 0.5 * open * (1 + 0.12 * m) : 0.06 - 0.47 * open * (1 - 0.1 * m);
-      const b = upper ? edge + t * (1.75 - edge) : edge - t * (1.75 + edge);
-      const r = r0 + 0.0007 * Math.exp(-t * 14);   // the rounded margin stands a touch proud of the ball
-      pos.push(sx * 0.03 + r * Math.sin(a) * Math.cos(b), EY + r * Math.sin(b), EZ - r * Math.cos(a) * Math.cos(b));
-    }
-    for (let i = 0; i < NA; i++) for (let j = 0; j < NT; j++) { const k = i * (NT + 1) + j; idx.push(k, k + 1, k + NT + 1, k + 1, k + NT + 2, k + NT + 1); }
-    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx); g.computeVertexNormals(); return g;
-  };
-  for (const sx of [1, -1]) {
-    const ex = sx * 0.03;
-    mesh(ell(ER, ER, ER, ex, EY, EZ, 24, 18), M.eye, R.head);
-    mesh(cap(ER + 0.00012, 0.5, ex), M.iris, R.head);
-    mesh(cap(ER + 0.00024, 0.2, ex), M.pupil, R.head);
-    mesh(ell(ER * 1.04, ER * 1.04, ER * 1.04, ex, EY, EZ - 0.0004, 20, 14), M.cornea, R.head);
-    mesh(lidGeo(sx, true, ER + 0.0011, 0, 1), M.lid, R.head);
-    mesh(lidGeo(sx, true, ER + 0.0019, 0, 0.07), M.lash, R.head);   // the lash line along the upper margin
-    mesh(lidGeo(sx, false, ER + 0.0009, 0, 1), M.lidLo, R.head);
+  M.face = new THREE.MeshStandardMaterial({ map: retroFaceTex(r), flatShading: true, roughness: 0.75, metalness: 0 });
+  mesh(retroHeadGeo(r.nose), M.face, R.head);
+  const hood = hoodOn(r);
+  ud.hoodOn = hood;
+  if (hood) {
+    M.hood = M.s.clone(); M.hood.flatShading = true; M.hood.side = THREE.DoubleSide;
+    mesh(hoodGeo(), M.hood, R.head);
+    R.neck.material = M.hood;
+  } else {
+    const rng = seeded(1 + HAIRS.findIndex(h => h[0] === r.hair) * 97);
+    const hg = hairGeo(r.hair, rng);
+    if (hg) mesh(hg, M.h, R.head);
   }
-  // brows: one soft tapered band of hair lying on the brow ridge, thick at the inside and fading to a fine tail
-  {
-    const hp = R.head.children[0].geometry.attributes.position, surfZ = (x, y) => {
-      let best = 1e9, bz = -0.09;
-      for (let i = 0; i < hp.count; i++) { const vz = hp.getZ(i); if (vz > -0.03) continue; const d = (hp.getX(i) - x) ** 2 + (hp.getY(i) - y) ** 2; if (d < best) { best = d; bz = vz; } }
-      return bz;
-    };
-    M.brow.side = THREE.DoubleSide;
-    const pos = [], idx = [], N = 22;
-    for (const sx of [1, -1]) {
-      const base = pos.length / 3;
-      for (let k = 0; k <= N; k++) {
-        const t = k / N, x = sx * (0.012 + 0.042 * t), y = 0.026 + 0.008 * Math.sin(Math.PI * Math.pow(t, 0.7)) - 0.004 * t;
-        const w = 0.0068 * (1 - 0.7 * t) * (0.55 + 0.45 * smooth(Math.min(1, t / 0.15)));
-        for (const e of [-0.5, 0, 0.5]) {
-          const yy = y + e * w + (e > 0 ? 0.0006 * (1 - t) : 0);   // the inner end brushes up a little
-          pos.push(x, yy, Math.min(surfZ(x, yy), surfZ(x + 0.002, yy), surfZ(x - 0.002, yy)) - (e === 0 ? 0.0018 : 0.0011));
-        }
-      }
-      for (let k = 0; k < N; k++) for (let e = 0; e < 2; e++) { const a = base + k * 3 + e; idx.push(a, a + 3, a + 1, a + 1, a + 3, a + 4); }
-    }
-    const bg = new THREE.BufferGeometry(); bg.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); bg.setIndex(idx); bg.computeVertexNormals();
-    mesh(bg, M.brow, R.head);
-  }
-  const rng = seeded(1 + HAIRS.findIndex(h => h[0] === r.hair) * 97);
-  const hg = hairGeo(r.hair, rng);
-  if (hg) mesh(hg, M.h, R.head);
-  const fh = faceHairGeo(r.face, headGeo(new THREE.Color(1, 1, 1), false));
-  if (fh) { M.stub.vertexColors = true; M.stub.roughness = 1; mesh(fh, M.stub, R.head); }
   ud.body = body; ud.rig = R; ud.curvy = curvy; ud.shW = shW;
   body.traverse(o => { if (o.isMesh) { o.frustumCulled = false; o.castShadow = true; o.receiveShadow = true; } });
   ud.skin = null;
@@ -2022,6 +2120,14 @@ function buildRiderUI() {
   BOARDC.forEach((c, i) => optButton($('rBoardC'), 'boardC', i, boardNames[i], c));
   HAIRS.forEach(([v, l]) => optButton($('rHair'), 'hair', v, l));
   FACES.forEach(([v, l]) => optButton($('rFace'), 'face', v, l));
+  EYES.forEach(([v, l]) => optButton($('rEyes'), 'eyes', v, l));
+  const eyeNames = ['Brown', 'Dark brown', 'Hazel', 'Green', 'Blue', 'Grey'];
+  EYEC.forEach((c, i) => optButton($('rEyeC'), 'eyeC', i, eyeNames[i], c));
+  BROWS.forEach(([v, l]) => optButton($('rBrows'), 'brows', v, l));
+  NOSES.forEach(([v, l]) => optButton($('rNose'), 'nose', v, l));
+  MOUTHS.forEach(([v, l]) => optButton($('rMouth'), 'mouth', v, l));
+  EXTRAS.forEach(([v, l]) => optButton($('rExtra'), 'extra', v, l));
+  HOODS.forEach(([v, l]) => optButton($('rHood'), 'hood', v, l));
   FRAMES.forEach(([v, l]) => optButton($('rFrame'), 'frame', v, l));
   BUILDS.forEach(([v, l]) => optButton($('rBuild'), 'build', v, l));
   WEARS.forEach(([v, l]) => optButton($('rWear'), 'wear', v, l));
@@ -2042,7 +2148,8 @@ function buildRiderUI() {
   $('rRandom').addEventListener('click', () => {
     const any = a => a[Math.floor(Math.random() * a.length)];
     rider = { name: any(PRESETS).name, nation: any(NATIONS)[0], skin: Math.floor(Math.random() * SKIN.length), hair: any(HAIRS)[0], hairC: Math.random() < 0.75 ? Math.floor(Math.random() * 7) : Math.floor(Math.random() * HAIRC.length),
-      face: any(FACES)[0], frame: any(FRAMES)[0], board: any(BOARD_TYPES)[0], build: any(BUILDS)[0], wear: any(WEARS)[0], suitC: Math.floor(Math.random() * SUITC.length), boardC: Math.floor(Math.random() * BOARDC.length) };
+      face: any(FACES)[0], frame: any(FRAMES)[0], board: any(BOARD_TYPES)[0], build: any(BUILDS)[0], wear: any(WEARS)[0], suitC: Math.floor(Math.random() * SUITC.length), boardC: Math.floor(Math.random() * BOARDC.length),
+      eyes: any(EYES)[0], eyeC: Math.floor(Math.random() * EYEC.length), brows: any(BROWS)[0], nose: any(NOSES)[0], mouth: any(MOUTHS)[0], extra: Math.random() < 0.6 ? 'none' : any(EXTRAS)[0], hood: rider.hood };
     applyRider();
   });
   $('rDone').addEventListener('click', closeRider);
