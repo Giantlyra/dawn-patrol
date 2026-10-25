@@ -2,7 +2,7 @@
 
 A 3D surf game built with three.js — single file, runs in any modern browser.
 
-Open `index.html` to pick a version: `v2/` is the latest, `v1/` the original line.
+Open `index.html` to pick a version: `island/` is the newest (open world + surf), `v3/` is V1's surfing in V2's look, `v2/` and `v1/` are the earlier lines.
 
 ## Controls
 - Arrow keys / WASD: carve, pump, set your line

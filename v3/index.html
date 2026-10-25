@@ -187,6 +187,7 @@ body:not(.touch) .padrow{display:none}
     <div class="eyebrow">5:48 am · offshore wind · A-frame peak</div>
     <h1>Dawn Patrol</h1>
     <p class="lede">The set is standing up on the peak. Stay ahead of the whitewater, pump for speed, launch off the lip and tuck into the barrel.</p>
+    <div class="who" style="border:1px solid #ff7a59;border-radius:8px;padding:8px 10px;margin:10px 0" id="islandRow"><span>Dawn Patrol Island <b style="color:#ff7a59">NEW</b><br><small style="opacity:.75">Open world: live on Barbados, surf 6 spots, build a shack, adopt Coco.</small></span><a class="chip" id="islandBtn" href="https://claude.ai/artifact/NijNrfJF3xwqReRSbqsAPT" target="_blank" rel="noopener" style="text-decoration:none;display:inline-block">Go to the island</a></div>
     <ul class="how">
       <li><span>Controller</span><span>Plug in or pair a game controller: stick or D-pad steers, <b>A</b> pumps (and starts), <b>B</b> or a trigger stalls and grabs, <b>Y</b> changes view, <b>Start</b> pauses.</span></li>
       <li class="touchonly"><span>On a phone</span><span>▲ ▼ = the up and down arrow keys (or switch to a full thumb stick below, put it on either side, or hide it) (diagonals work). <b>Pump</b> = Space, <b>Stall / Grab</b> = Shift. You can also drag a finger on the wave to steer toward it.</span></li>
@@ -4090,3 +4091,4 @@ function frame() {
 requestAnimationFrame(frame);
 })();
 </script>
+<script>if (location.hash.indexOf('#isle') === 0) { const r = document.getElementById('islandRow'); if (r) r.remove(); }</script>
