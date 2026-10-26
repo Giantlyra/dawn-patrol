@@ -4,6 +4,8 @@
 /* Island shares this site with V1-V3, which save under the same names; keep Island's saves separate. */
 (function(){try{var ls=window.localStorage,P='isl:';var w={getItem:function(k){return ls.getItem(P+k)},setItem:function(k,v){ls.setItem(P+k,v)},removeItem:function(k){ls.removeItem(P+k)},clear:function(){},key:function(){return null},get length(){return 0}};Object.defineProperty(window,'localStorage',{value:w,configurable:true});}catch(e){}})();
 </script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
 <title>Dawn Patrol Island</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -93,7 +95,7 @@ button{font:inherit;color:inherit;cursor:pointer}
 #title{position:fixed;inset:0;z-index:19;display:flex;flex-direction:column;align-items:center;justify-content:space-between;padding:13vh 16px 11vh;background:linear-gradient(to bottom,rgba(0,0,0,.45),transparent 32%,transparent 62%,rgba(0,0,0,.55));text-align:center}
 #title h1{font-family:'Silkscreen';font-weight:400;font-size:clamp(38px,9vw,92px);line-height:1;margin:0;color:var(--yel);text-shadow:4px 4px 0 #000,0 0 30px rgba(255,140,40,.5);letter-spacing:2px}
 #title .sub{font-family:'Silkscreen';font-size:clamp(14px,2.4vw,22px);color:#fff;text-shadow:2px 2px 0 #000;margin-top:10px;letter-spacing:4px}
-#title .tb{display:flex;gap:10px;flex-wrap:wrap;justify-content:center}#title .tb .btn{font-size:18px;padding:8px 22px;white-space:nowrap}
+#title .tb{position:static;width:auto;height:auto;border-radius:0;background:none;border:0;box-shadow:none;display:flex;gap:10px;flex-wrap:wrap;justify-content:center}#title .tb .btn{font-size:18px;padding:8px 22px;white-space:nowrap}
 #title .where{font-family:'Silkscreen';font-size:12px;color:#ddd;text-shadow:1px 1px 0 #000;margin-top:12px;min-height:16px}
 body.titling > *:not(#cv):not(#title):not(#modal):not(#fade):not(#surfWrap):not(script):not(style){visibility:hidden}
 #fps{position:fixed;left:50%;bottom:4px;transform:translateX(-50%);font-family:'Silkscreen';font-size:11px;color:#7dff8a;text-shadow:1px 1px 0 #000;pointer-events:none;z-index:7}
@@ -129,6 +131,42 @@ body.touch #mobBtns{display:flex}
   #prompt{bottom:auto;top:130px}#prog{bottom:auto;top:160px}
   #buildBar{top:auto;bottom:120px;max-width:calc(100vw - 20px)}
 }
+/* phone held sideways: everything shrinks to fit a ~360-430px tall screen; thumbs get the bottom corners */
+#rotate{display:none}
+@media (orientation:portrait){body.touch #rotate{display:flex;position:fixed;inset:0;z-index:100;flex-direction:column;align-items:center;justify-content:center;gap:18px;background:#0c1822;color:var(--yel);font-family:'Silkscreen';font-size:18px;text-align:center;padding:24px}
+  #rotate i{display:block;width:54px;height:92px;border:4px solid var(--yel);border-radius:10px;animation:rot 2s ease-in-out infinite}
+  #rotate small{font-family:'VT323';font-size:20px;color:var(--txt)}
+  @keyframes rot{0%,20%{transform:rotate(0)}50%,80%{transform:rotate(-90deg)}100%{transform:rotate(0)}}}
+@media (max-height:540px){
+  body.touch{font-size:16px}
+  body.touch #top{padding:3px 8px;gap:9px;font-size:16px}
+  body.touch #top .btn{font-size:11px;padding:3px 7px}
+  body.touch #mmWrap{transform:scale(.56);transform-origin:top right}
+  body.touch #goalHud{top:auto;bottom:max(8px,env(safe-area-inset-bottom));font-size:14px;padding:3px 10px;max-width:46vw}
+  body.touch #mobBtns{top:calc(max(6px,env(safe-area-inset-top)) + 32px)}
+  body.touch #mobBtns .btn{font-size:11px;padding:3px 8px}
+  body.touch #chat{top:calc(max(6px,env(safe-area-inset-top)) + 62px);bottom:auto;height:58px;width:min(300px,36vw);padding:3px 6px;background:rgba(58,48,36,.6)}
+  body.touch #chat div{font-size:14px}
+  body.touch #side:not(.open){display:none}
+  body.touch #side.open{top:calc(max(6px,env(safe-area-inset-top)) + 40px);bottom:auto;right:auto;left:50%;transform:translateX(-50%);width:min(300px,60vw);z-index:12}
+  body.touch #tab{height:min(190px,calc(100vh - 120px));overflow:auto}
+  body.touch #prompt{top:auto;bottom:calc(max(8px,env(safe-area-inset-bottom)) + 34px);font-size:16px}
+  body.touch #prog{top:auto;bottom:calc(max(8px,env(safe-area-inset-bottom)) + 62px)}
+  body.touch #buildBar{top:max(6px,env(safe-area-inset-top));bottom:auto;max-width:calc(100vw - 260px);transform:translateX(-50%) scale(.8);transform-origin:top center}
+  body.touch #rideHud{top:40px}
+  body.touch #fight{display:none}
+  body.touch #mmWrap small{display:none}
+  body.touch #modal .panel{max-height:calc(100vh - 16px)}
+  body.touch #stick{left:max(22px,env(safe-area-inset-left));bottom:max(18px,env(safe-area-inset-bottom));width:112px;height:112px}
+  body.touch #knob{left:31px;top:31px}
+  body.touch #tUse{right:max(22px,env(safe-area-inset-right));bottom:max(20px,env(safe-area-inset-bottom));width:72px;height:72px}
+  body.touch #tRun{right:max(104px,env(safe-area-inset-right) + 82px);bottom:max(14px,env(safe-area-inset-bottom))}
+  body.touch #tHit{right:max(30px,env(safe-area-inset-right) + 8px);bottom:calc(max(20px,env(safe-area-inset-bottom)) + 82px)}
+  body.touch #tRock{right:max(102px,env(safe-area-inset-right) + 80px);bottom:calc(max(14px,env(safe-area-inset-bottom)) + 72px);width:50px;height:50px}
+  body.touch #tBuild{right:max(166px,env(safe-area-inset-right) + 144px);bottom:calc(max(14px,env(safe-area-inset-bottom)) + 92px);width:48px;height:48px}
+  body.touch #tGo{left:calc(max(22px,env(safe-area-inset-left)) + 124px);bottom:max(18px,env(safe-area-inset-bottom));width:48px;height:48px}
+  body.touch #title{padding:6vh 16px 7vh}
+}
 </style>
 <canvas id="cv" tabindex="0" aria-label="Island. WASD to move, arrow keys turn the camera, E to use."></canvas>
 <div id="labels"></div>
@@ -159,6 +197,7 @@ body.touch #mobBtns{display:flex}
 <div id="fade"></div>
 <div id="title" hidden><div><h1>DAWN PATROL</h1><div class="sub">BARBADOS</div></div><div><div class="tb"><button class="btn" id="tPlay" type="button">Play</button><button class="btn alt" id="tNew" type="button" hidden>New game</button><button class="btn alt" id="tHelp" type="button">How to play</button></div><div class="where" id="tWhere"></div></div></div>
 <div id="fps" hidden></div>
+<div id="rotate"><i></i><div>Turn your phone sideways</div><small>Dawn Patrol plays in landscape</small></div>
 <div id="peek" hidden><span>Window: someone's outside</span></div>
 <div id="sleepFx" hidden><div>Zzz…</div></div>
 <div id="surfWrap" hidden><iframe id="surfFrame" title="Surfing" allow="gamepad; autoplay"></iframe></div>
@@ -5642,6 +5681,7 @@ function renderPeek() {
 function frame() {
   const now = performance.now(), dt = clamp((now - last) / 1000, 0, 0.05); perfTick((now - last) / 1000); last = now;
   if ($('surfWrap').hidden && replay) { updateReplay(dt); if (replay) renderer.render(scene, camera); }
+  else if ($('surfWrap').hidden && document.body.classList.contains('touch') && innerHeight > innerWidth && !title) { renderer.render(scene, camera); }
   else if ($('surfWrap').hidden) {
     if (title) { for (const k in keys) keys[k] = false; pressed.clear(); }
     update(dt); if (title) updateTitle(dt);
@@ -5662,7 +5702,12 @@ function endTitle() {
   $('fade').classList.add('on');
   setTimeout(() => { document.body.classList.remove('titling'); $('title').hidden = true; $('fade').classList.remove('on'); cv.focus({ preventScroll: true }); if (!G.started) startScreen(); }, 300);
 }
-$('tPlay').addEventListener('click', endTitle);
+function phoneLandscape() {
+  if (!document.body.classList.contains('touch')) return;
+  const el = document.documentElement, fs = el.requestFullscreen || el.webkitRequestFullscreen;
+  try { const r = fs && !document.fullscreenElement && fs.call(el, { navigationUI: 'hide' }); const lock = () => { try { const q = screen.orientation && screen.orientation.lock && screen.orientation.lock('landscape'); if (q && q.catch) q.catch(() => {}); } catch (e) {} }; if (r && r.then) r.then(lock, lock); else lock(); } catch (e) {}
+}
+$('tPlay').addEventListener('click', () => { phoneLandscape(); endTitle(); });
 $('tHelp').addEventListener('click', () => openHelp('house'));
 $('tNew').addEventListener('click', e => {
   if (e.target.dataset.sure) { wiping = true; try { localStorage.removeItem('dpisle.save'); } catch (er) {} location.reload(); return; }
@@ -5709,7 +5754,7 @@ function perfTick(ft) {
     }
   }
 }
-if (QL.mode === 'lo') setQuality(true);
+if (QL.mode === 'lo' || (QL.mode === 'auto' && document.body.classList.contains('touch') && Math.min(screen.width, screen.height) < 600)) setQuality(true);
 // car placement from the save
 if (G.car.owned) { car.mesh.position.set(G.car.x, groundH(G.car.x, G.car.z), G.car.z); car.mesh.rotation.y = G.car.yaw; }
 setInterval(() => { if (G.car.owned) { G.car.x = car.mesh.position.x; G.car.z = car.mesh.position.z; G.car.yaw = car.mesh.rotation.y; } }, 2000);
