@@ -2602,7 +2602,7 @@ function makeV3(s) {
   const mesh = new THREE.Mesh(gridGeo(VNX, VNZ), v3Mat(1, 0)); mesh.frustumCulled = false; mesh.renderOrder = 2; grp.add(mesh);
   const lip = new THREE.Mesh(gridGeo(12, 28, true), v3Mat(0.7, 1)); lip.frustumCulled = false; lip.renderOrder = 3; grp.add(lip);
   scene.add(grp);
-  s.v3 = { grp, mesh, lip, phase: Math.random(), k: 0, curl: -60, barrel: 0, size: s.cfg.size || 1, hol: s.cfg.pitch ? 0.4 : 0, dir: s.surf.peel, P: 17 + 3 * Math.random(), zOff: 0, fade: 1 };
+  s.v3 = { grp, mesh, lip, phase: Math.random(), k: 0, curl: -60, barrel: 0, size: s.cfg.size || 1, hol: s.cfg.pitch ? 0.4 : 0, dir: s.surf.peel, P: 17 + 3 * Math.random(), zOff: 0, fade: 1, setK: 0.925 };
 }
 // the game's waveY0, for one spot's wave (x along the reef in the direction it peels, z toward the beach)
 let VFOAM = 0;
@@ -3122,7 +3122,7 @@ const SND = (() => {
     o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(f1, t + dur); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
     o.connect(g); g.connect(out); o.start(t); o.stop(t + dur + 0.02);
   }
-  const set = (k, v, f) => { if (!L[k]) return; L[k].g.gain.setTargetAtTime(v, ac.currentTime, 0.15); if (f) L[k].fl.frequency.setTargetAtTime(f, ac.currentTime, 0.2); };
+  const set = (k, v, f) => { if (!L[k] || !Number.isFinite(v) || (f && !Number.isFinite(f))) return; L[k].g.gain.setTargetAtTime(v, ac.currentTime, 0.15); if (f) L[k].fl.frequency.setTargetAtTime(f, ac.currentTime, 0.2); };
   let critT = 0, birdT = 0;
   return {
     get on() { return on; },
@@ -5160,7 +5160,7 @@ function update(dt) {
   // sound: the sea gets louder as you get near it, the nearest breaking wave thunders, frogs whistle at night
   { const sd = sdAt(me.x, me.z), sea = clamp(1 - sd / 60, 0, 1); let crash = 0;
     SPOTS.forEach(s => { const W = s.v3; if (!W) return; const d = Math.hypot(W.grp.position.x - me.x, W.grp.position.z - me.z); crash = Math.max(crash, W.fade * W.setK * (1 - smooth(20, 160, d)) * (0.6 + 0.4 * W.barrel)); });
-    SND.tick(dt, sea, clamp(crash, 0, 1), ride ? clamp(ride.sp / 18, 0, 1) : 0, G.time >= NIGHT_AT, clamp(sd / 80, 0, 1)); }
+    SND.tick(dt, sea, Number.isFinite(crash) ? clamp(crash, 0, 1) : 0, ride ? clamp(ride.sp / 18, 0, 1) : 0, G.time >= NIGHT_AT, clamp(sd / 80, 0, 1)); }
   // the surf hint while you're out the back
   { const st = ride ? null : me.catchS, h = $('surfHint');
     const txt = st === 'go' ? 'GO! SPACE' : st === 'coming' ? 'Wave coming… get ready' : st === 'wait' ? 'Waiting for a wave…' : st === 'inside' ? 'Paddle out past the breaking wave' : st === 'deep' ? 'Too far out: paddle in toward the peak' : st === 'side' ? 'Paddle over toward the peak' : '';
