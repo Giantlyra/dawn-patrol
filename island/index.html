@@ -1777,8 +1777,14 @@ for (let j = 0; j < NZ; j++) for (let i = 0; i < NX; i++) {
   const x = X0 + i * CS, z = Z0 + j * CS, d = coastSD(x, z) + (fbm(x * 0.025 + 7, z * 0.025 + 3) - 0.5) * 16;
   SD[j * NX + i] = d; H[j * NX + i] = heightAt(d, x, z);
 }
-// exact height of the terrain triangles (PlaneGeometry splits each quad along the b-d diagonal)
+// the boat yard's pier is solid deck to walk on (set once the yard is built)
+let PIER = null;
 function groundH(x, z) {
+  if (PIER) { const rx = x - PIER.x, rz = z - PIER.z, al = rx * PIER.nx + rz * PIER.nz, ac = rx * PIER.nz - rz * PIER.nx; if (al > -1.5 && al < PIER.len + 1 && Math.abs(ac) < 1.5) return Math.max(1.14, groundT(x, z)); }
+  return groundT(x, z);
+}
+// exact height of the terrain triangles (PlaneGeometry splits each quad along the b-d diagonal)
+function groundT(x, z) {
   let fx = (x - X0) / CS, fz = (z - Z0) / CS;
   if (fx < 0 || fz < 0 || fx >= NX - 1 || fz >= NZ - 1) return -11;
   const i = fx | 0, j = fz | 0; fx -= i; fz -= j;
@@ -2044,6 +2050,31 @@ function house(x, z, ry, col, w = 4, d = 5, h = 2.6) {
   addCol(x, z, Math.max(w, d) * 0.55);
 }
 const SHOPS = [];
+// South Coast Boat Yard: a pier near Oistins that runs out to deep water, away from the breaks
+const DOCK = {};
+function boatYard() {
+  // the nearest bit of Oistins shoreline that's well clear of every surf break, so the boats sit in calm water
+  const t = T.oistins, toSea = (x, z) => { for (let k = 0; k < 200 && sdAt(x, z) > 1.5; k++) { const gx = sdAt(x + 1, z) - sdAt(x - 1, z), gz = sdAt(x, z + 1) - sdAt(x, z - 1), g = Math.hypot(gx, gz) || 1; x -= gx / g; z -= gz / g; } return [x, z]; };
+  let x, z, bd = 1e9;
+  for (let a = 0; a < TAU; a += TAU / 48) for (const r of [10, 25, 40, 60, 80]) {
+    const [cx, cz] = toSea(t.c[0] + Math.cos(a) * r, t.c[1] + Math.sin(a) * r);
+    const clear = Math.min(...SPOTS.map(q => Math.hypot(q.beach[0] - cx, q.beach[1] - cz)));
+    const d = Math.hypot(cx - t.c[0], cz - t.c[1]);
+    if (clear > 70 && d < bd) { bd = d; x = cx; z = cz; }
+  }
+  if (x == null) [x, z] = toSea(...t.c);
+  const [nx, nz] = outward(x, z), ry = Math.atan2(nx, nz);
+  let len = 10; while (len < 40 && groundT(x + nx * len, z + nz * len) > -1.6) len += 2;
+  PIER = DOCK; Object.assign(DOCK, { x, z, nx, nz, len, ry, end: [x + nx * len, z + nz * len], moor: [x + nx * (len + 2) + nz * 2.6, z + nz * (len + 2) - nx * 2.6] });
+  for (let k = 0; k <= len; k += 2) {
+    const px = x + nx * k, pz = z + nz * k;
+    houseList.push([boxG, mtx(px, 1.05, pz, ry, 3, 0.18, 2.05), k % 4 ? '#a47b52' : '#8d6640']);
+    [-1.35, 1.35].forEach(o => houseList.push([boxG, mtx(px + nz * o, -0.6, pz - nx * o, ry, 0.22, 3.4, 0.22), '#5a3a1e']));
+  }
+  const sx = x - nx * 3, sz = z - nz * 3;
+  houseList.push([boxG, mtx(sx + nz * 3, groundH(sx, sz) + 1.4, sz - nx * 3, ry, 3.2, 0.9, 0.12), '#2a9d8f']);
+  SHOPS.push({ id: 'boat', name: 'South Coast Boat Yard', x: sx, z: sz, ry: ry + Math.PI, sign: 'BOATS', dock: true });
+}
 function shop(id, name, town, off, col, sign) {
   const t = T[town];
   const [x, z] = inland([t.c[0] + off[0], t.c[1] + off[1]], 8);
@@ -2058,6 +2089,7 @@ const towns = () => {
   shop('car', 'Moke Motors', 'bridgetown', [-6, 12], '#f2c14e', 'CARS');
   shop('fish', 'Oistins Fish Fry', 'oistins', [4, 6], '#ff8a65', 'FISH');
   shop('shaper', 'Ras the shaper', 'holetown', [8, 4], '#c9a3e6', 'SHAPES');
+  boatYard();
   TOWNS.forEach(t => {
     let made = 0;
     for (let k = 0; k < t.n * 6 && made < t.n; k++) {
@@ -2110,6 +2142,83 @@ SHOPS.forEach(s => {
   signList.push([boxG, mtx(s.x - Math.cos(s.ry) * 2, y + 1.2, s.z + Math.sin(s.ry) * 2, s.ry, 0.15, 2.4, 0.15), '#5a3a1e']);
 });
 scene.add(mergeInto(signList));
+
+// ---------- boats: drive on the sea, hop off at any break and paddle in ----------
+const BOATS = {
+  pirogue: { name: 'Fishing pirogue', price: 450, top: 9, acc: 3.5, turn: 0.8, blurb: 'Slow and steady. Fish off the side for bigger catches', col: '#2a9d8f' },
+  jetski: { name: 'Jet ski', price: 1400, top: 19, acc: 9, turn: 1.5, blurb: 'Fast. Any break on the island in a minute or two', col: '#e63946' }
+};
+const boat = { mesh: null, spd: 0, steer: 0, wake: 0 };
+function makeBoat(id) {
+  const B = BOATS[id], g = new THREE.Group(), M = c => new THREE.MeshLambertMaterial({ color: c }), add = (geo, c, x, y, z, ry = 0) => { const m = new THREE.Mesh(geo, M(c)); m.position.set(x, y, z); m.rotation.y = ry; m.castShadow = true; g.add(m); return m; };
+  if (id === 'pirogue') {
+    add(new THREE.BoxGeometry(1.6, 0.75, 4.6), B.col, 0, 0.2, -0.3);
+    add(new THREE.BoxGeometry(1.13, 0.75, 1.13), B.col, 0, 0.2, 1.95, Math.PI / 4).scale.set(1, 1, 1.6);
+    add(new THREE.BoxGeometry(1.62, 0.12, 4.62), '#f4f1de', 0, 0.5, -0.3);
+    add(new THREE.BoxGeometry(1.3, 0.08, 0.35), '#a47b52', 0, 0.45, 0.6); add(new THREE.BoxGeometry(1.3, 0.08, 0.35), '#a47b52', 0, 0.45, -1.4);
+    add(new THREE.BoxGeometry(0.4, 0.9, 0.4), '#222', 0, 0.55, -2.75); add(new THREE.BoxGeometry(0.12, 0.7, 0.12), '#555', 0, -0.1, -2.85);
+  } else {
+    add(new THREE.BoxGeometry(0.95, 0.5, 2.2), B.col, 0, 0.15, -0.2);
+    add(new THREE.BoxGeometry(0.67, 0.5, 0.67), B.col, 0, 0.15, 0.9, Math.PI / 4).scale.set(1, 1, 1.5);
+    add(new THREE.BoxGeometry(0.5, 0.25, 1.2), '#1d1d1d', 0, 0.5, -0.45);
+    add(new THREE.BoxGeometry(0.7, 0.08, 0.08), '#333', 0, 0.75, 0.45); add(new THREE.BoxGeometry(0.1, 0.35, 0.1), '#333', 0, 0.58, 0.45);
+  }
+  return g;
+}
+function setBoatModel(id) {
+  if (boat.mesh) scene.remove(boat.mesh);
+  boat.mesh = makeBoat(id); scene.add(boat.mesh); boat.mesh.visible = G.boat.owned;
+  boat.mesh.position.set(G.boat.x, 0, G.boat.z); boat.mesh.rotation.y = G.boat.yaw;
+}
+const seaY = (x, z) => 0.05 + Math.sin(tick * 1.3 + x * 0.08) * 0.1 + Math.sin(tick * 0.9 + z * 0.06) * 0.06;
+function buyBoat(id) {
+  Object.assign(G.boat, { owned: true, model: id, x: DOCK.moor[0], z: DOCK.moor[1], yaw: DOCK.ry });
+  G.inBoat = false; setBoatModel(id);
+  chat('Your ' + BOATS[id].name + ' is tied up at the end of the pier. Walk out and press E to get in.', 'g');
+}
+function boatName() { return BOATS[G.boat.model].name; }
+function getInBoat() { G.inBoat = true; me.paddling = false; me.goTo = null; act = null; boat.spd = 0; me.x = boat.mesh.position.x; me.z = boat.mesh.position.z;
+  chat(G.boat.model === 'jetski' ? 'W throttle, S brake and reverse, A/D steer. Ride out to a break, then E to jump in and paddle.' : 'W/S throttle, A/D steer. E for fishing off the side, or to hop off at a break.', 'o'); }
+function landNear(x, z) {   // nearest dry spot within reach of the boat, for stepping off
+  let best = null, bd = 1e9;
+  for (let a = 0; a < TAU; a += TAU / 24) for (let r = 2; r <= 9; r += 1.5) { const px = x + Math.cos(a) * r, pz = z + Math.sin(a) * r; if (groundH(px, pz) > 0.15 && r < bd) { bd = r; best = [px, pz]; } }
+  return best;
+}
+function driveBoat(dt, ix, iz) {
+  const B = BOATS[G.boat.model], m = boat.mesh, thr = -iz, st = -ix;
+  me.vel = 0;
+  const sa = spotAt(m.position.x, m.position.z), surf = sa && sa.s.v3;
+  const top = surf ? Math.min(B.top, 5) : B.top;
+  boat.spd += thr * (thr * boat.spd < 0 ? B.acc * 2 : B.acc) * dt;
+  if (!thr) boat.spd -= Math.sign(boat.spd) * Math.min(Math.abs(boat.spd), 1.6 * dt);
+  boat.spd = clamp(boat.spd, -3, top + Math.max(0, boat.spd - top) * 0.9);
+  boat.steer = lerp(boat.steer, st, dt * 4);
+  m.rotation.y += boat.steer * B.turn * clamp(Math.abs(boat.spd) / 4, 0.25, 1) * Math.sign(boat.spd || 1) * dt;
+  let nx = m.position.x + Math.sin(m.rotation.y) * boat.spd * dt, nz = m.position.z + Math.cos(m.rotation.y) * boat.spd * dt;
+  // the surf zone shoves you back toward the beach; shallows and the edge of the map stop you
+  if (surf) { const n = sa.s.n; nx -= n[0] * 1.6 * dt; nz -= n[1] * 1.6 * dt; if (tick - (boat.msg || -99) > 8) { boat.msg = tick; chat('You\'re in the surf zone at ' + sa.s.name + '. E to jump in and paddle, or back off.', 'c'); } }
+  const pierHit = DOCK.end && (() => { const rx = nx - DOCK.x, rz = nz - DOCK.z, al = rx * DOCK.nx + rz * DOCK.nz, ac = rx * DOCK.nz - rz * DOCK.nx; return al > -2 && al < DOCK.len + 1 && Math.abs(ac) < 2.4; })();
+  if (groundH(nx, nz) > -0.9 || pierHit || Math.abs(nx) > 262 || nz < -292 || nz > 295) {
+    if (Math.abs(boat.spd) > 3 && tick - (boat.msg2 || -99) > 3) { boat.msg2 = tick; chat(pierHit ? 'Thunk. Mind the pier.' : groundH(nx, nz) > -0.9 ? 'Too shallow for the boat. E to hop off.' : 'That\'s as far as the reef goes.', 'o'); }
+    boat.spd *= -0.2; nx = m.position.x; nz = m.position.z;
+  }
+  m.position.x = nx; m.position.z = nz;
+  me.x = nx; me.z = nz; me.yaw = m.rotation.y;
+  G.boat.x = nx; G.boat.z = nz; G.boat.yaw = m.rotation.y;
+  G.stam = Math.min(stamMax(), G.stam + 6 * dt);
+  // spray off the bow at speed
+  boat.wake += dt * Math.abs(boat.spd);
+  if (boat.wake > 1.2 && Math.abs(boat.spd) > 4) { boat.wake = 0; const s2 = Math.sin(m.rotation.y), c2 = Math.cos(m.rotation.y); puff(nx - s2 * 2, 0.2, nz - c2 * 2, '#f4fbff', 3, { v: 1.2, up: 1.2, g: 3, life: 0.7, s0: 0.3, s1: 1.1, op: 0.6 }); }
+}
+function placeBoat(dt) {
+  const m = boat.mesh; if (!m || !G.boat.owned) return;
+  const near = camera.position.distanceToSquared(m.position) < 200 * 200; if (!near) return;
+  const sa = spotAt(m.position.x, m.position.z), y = sa && sa.s.v3 ? 0.06 + v3HeightAt(sa.s, sa.u, sa.v) : seaY(m.position.x, m.position.z);
+  m.position.y = lerp(m.position.y, y - 0.15, Math.min(1, dt * 6));
+  const sp = G.inBoat ? boat.spd : 0;
+  m.rotation.x = lerp(m.rotation.x, -clamp(sp * 0.012, -0.06, 0.12) + Math.sin(tick * 1.1 + m.position.x) * 0.04, Math.min(1, dt * 3));
+  m.rotation.z = lerp(m.rotation.z, (G.inBoat ? boat.steer * clamp(sp / 10, 0, 1) * 0.2 : 0) + Math.sin(tick * 0.8 + m.position.z) * 0.05, Math.min(1, dt * 3));
+}
 
 // ---------- trees, rocks: instanced so chopped ones can vanish and grow back ----------
 const TREES = [], ROCKS = [];
@@ -2253,11 +2362,11 @@ const GOALS = [
 ];
 const fresh = () => ({
   v: 1, x: HOME[0], z: HOME[1] + 4, yaw: 0, stam: 100, food: 100, cash: 50, inv: { wood: 0 }, stash: {}, xp: Object.fromEntries(SKILLS.map(s => [s[0], 0])),
-  boards: [], active: 0, started: false, asked: 0, mode: 'survival', hp: 20, squat: null, car: { owned: false, model: 'moke', x: 0, z: 0, yaw: 0, tyres: false, x4: false, tune: false, wheel: true, locked: false, stolen: false, keys: true }, garage: [], inCar: false,
+  boards: [], active: 0, started: false, asked: 0, mode: 'survival', hp: 20, squat: null, car: { owned: false, model: 'moke', x: 0, z: 0, yaw: 0, tyres: false, x4: false, tune: false, wheel: true, locked: false, stolen: false, keys: true }, garage: [], inCar: false, boat: { owned: false, model: 'pirogue', x: 0, z: 0, yaw: 0 }, inBoat: false,
   goals: {}, beat: {}, looted: {}, learned: false, day: 1, time: 0.03, blocks: [], seen: { freights: 1, brandons: 1 }, gifts: {}, camps: {}, heat: 0, dog: { stage: 0, fed: 0, hunger: 70, mode: 'follow', name: 'Coco' }
 });
 let G = fresh();
-try { const s = JSON.parse(localStorage.getItem('dpisle.save') || 'null'); if (s && s.v === 1) G = { started: true, mode: 'easy', ...fresh(), ...s, car: { ...fresh().car, ...s.car }, dog: { ...fresh().dog, ...(s.dog || {}) } }; } catch (e) {}
+try { const s = JSON.parse(localStorage.getItem('dpisle.save') || 'null'); if (s && s.v === 1) G = { started: true, mode: 'easy', ...fresh(), ...s, car: { ...fresh().car, ...s.car }, boat: { ...fresh().boat, ...(s.boat || {}) }, dog: { ...fresh().dog, ...(s.dog || {}) } }; } catch (e) {}
 let wiping = false;
 if (G.car.keys === 'bag') G.car.keys = true;
 const save = () => { if (wiping) return; try { G.x = inside ? inside.door[0] : me.x; G.z = inside ? inside.door[1] : me.z; localStorage.setItem('dpisle.save', JSON.stringify(G)); } catch (e) {} };
@@ -2292,7 +2401,7 @@ function checkSpots() {
 
 // ---------- the player ----------
 const myLook = () => { const b = G.boards[G.active]; return KIT.fixLook({ ...(KIT.savedLook() || { ...KIT.PRESETS[0], wear: 'trunks' }), board: b ? BT[b.t].ride : 'hp', boardC: b ? BT[b.t].bc : 0 }); };
-if (!G.inCar && groundH(G.x, G.z) < 0.15) {
+if (!G.inCar && !G.inBoat && groundH(G.x, G.z) < 0.15) {
   const s = SPOTS.reduce((a, b) => Math.hypot(b.beach[0] - G.x, b.beach[1] - G.z) < Math.hypot(a.beach[0] - G.x, a.beach[1] - G.z) ? b : a);
   [G.x, G.z] = Math.hypot(s.beach[0] - G.x, s.beach[1] - G.z) < 150 ? inland([s.beach[0] - s.n[0] * 3, s.beach[1] - s.n[1] * 3], 2) : [HOME[0], HOME[1] + 4];
 }
@@ -3555,6 +3664,7 @@ function moveBody(b, dx, dz, r, who) {
   if (!solidAt(b.x, b.z + dz, r, who)) { b.z += dz; hit.slid = true; return hit; }
   return hit;
 }
+const canPaddleOut = () => { const b = G.boards[G.active]; return !!b && b.cond > 0 && !G.boardHome; };
 const canPaddle = () => { const b = G.boards[G.active]; return !!b && b.cond > 0 && !G.inCar && !G.boardHome; };
 // which surf spot's patch of sea you're in, if any: u along the beach, v out to sea
 function spotAt(x, z) {
@@ -3719,6 +3829,12 @@ function openShop(id) {
     rows.push(['Fried flying fish', 'Hot from the fryer. +35 food', 8, () => give('fish')]);
     rows.push(['Coconut', '+12 food', 3, () => give('coconut')]);
     [['rawfish', 5], ['fish', 9], ['chicken', 10], ['cchicken', 12]].forEach(([k, p]) => { if (has(k)) rows.push(['Sell ' + ITEMS[k][1] + ' ×' + G.inv[k], 'They pay $' + p + ' each', -p * G.inv[k], () => give(k, -G.inv[k])]); });
+  } else if (id === 'boat') {
+    Object.entries(BOATS).forEach(([k, B]) => { if (!(G.boat.owned && G.boat.model === k)) rows.push([B.name, B.blurb + (G.boat.owned ? ' · trade in your ' + boatName() + ' for half' : ''), G.boat.owned ? B.price - Math.round(BOATS[G.boat.model].price / 2) : B.price, () => buyBoat(k)]); });
+    if (G.boat.owned) {
+      rows.push(['Sell your ' + boatName(), 'Half what it cost', -Math.round(BOATS[G.boat.model].price / 2), () => { G.boat.owned = false; G.inBoat = false; if (boat.mesh) boat.mesh.visible = false; chat('Sold. The yard hauls it out.', 'g'); }]);
+      if (Math.hypot(G.boat.x - DOCK.moor[0], G.boat.z - DOCK.moor[1]) > 12) rows.push(['Fetch your ' + boatName(), 'Left it somewhere? They tow it back to the pier', 25, () => { G.boat.x = DOCK.moor[0]; G.boat.z = DOCK.moor[1]; G.boat.yaw = DOCK.ry; G.inBoat = false; setBoatModel(G.boat.model); }]);
+    }
   } else if (id === 'shaper') {
     rows.push(['Balsa custom', 'Ras shapes you one from 8 of your logs. Tough, fast, snappy', 150, () => { G.boards.push({ t: 'custom', cond: 100 }); chat('Ras hands you a fresh balsa custom. "Respect the wood."'); }, { wood: 8 }]);
     if (!G.learned) rows.push(['Learn ding repair', 'Ras shows you how. Suncure fixes twice as much', 60, () => { G.learned = true; addXP('repair', 120); }]);
@@ -3952,6 +4068,12 @@ const HELP = [
     <li>Moke Motors in Bridgetown (the yellow CARS sign) sells five: Mini Moke $325, Beach buggy $900, Hatchback $1600, Pickup 4x4 $2800, Rally 4x4 $5000.</li>
     <li><kbd>E</kbd> to get in or out, <kbd>W</kbd><kbd>S</kbd> drive, <kbd>A</kbd><kbd>D</kbd> steer, <kbd>L</kbd> lock it.</li>
     <li>Own more than one and swap or sell them at Moke Motors (Gear tab shows your lot).</li></ul>`],
+  ['boat', 'Boats', `<ul>
+    <li><b>South Coast Boat Yard</b> (the wooden pier on the south coast between Hastings and Oistins) sells a <b>Fishing pirogue</b> ($450) and a <b>Jet ski</b> ($1400).</li>
+    <li>Walk out along the pier and press <kbd>E</kbd> to get in. <kbd>W</kbd><kbd>S</kbd> throttle, <kbd>A</kbd><kbd>D</kbd> steer. Boats need deep water.</li>
+    <li>Ride out to any break and press <kbd>E</kbd> to <b>jump in and paddle</b>. The boat waits at anchor; paddle back and <kbd>E</kbd> to climb in.</li>
+    <li>In the pirogue, <kbd>E</kbd> away from the surf lets you <b>fish off the side</b>: better odds, sometimes two at once.</li>
+    <li>Lost it? The yard will tow it back to the pier for $25.</li></ul>`],
   ['bag', 'Your bag, keys and dog', `<ul>
     <li>When you paddle out, your bag stays on the sand with your car keys in it. Walk back to it to pick it up.</li>
     <li>If a thief takes it, the yellow marker follows them. Catch them and fight (<kbd>F</kbd>) to get it back.</li>
@@ -4270,6 +4392,18 @@ function interactables() {
   if (ride) return [];
   if (inside) return roomInteract();
   const out = [], near = (x, z, r) => Math.hypot(x - me.x, z - me.z) < r;
+  if (G.inBoat) {
+    const m = boat.mesh, sa = spotAt(m.position.x, m.position.z), land = landNear(m.position.x, m.position.z), b = G.boards[G.active];
+    if (sa && sa.s.v3) out.push({ d: 0, text: canPaddleOut() ? 'Jump in and paddle at ' + sa.s.name : 'Jump in at ' + sa.s.name + ' (you need your board)', go: () => {
+      if (!canPaddleOut()) return chat(!b ? 'You need a board to surf.' : G.boardHome ? 'Your board is back at home.' : 'Your board is snapped.', 'r');
+      G.inBoat = false; boat.spd = 0; me.dry = null; const s2 = Math.sin(m.rotation.y + Math.PI / 2), c2 = Math.cos(m.rotation.y + Math.PI / 2); me.x = m.position.x + s2 * 2.2; me.z = m.position.z + c2 * 2.2;
+      chat('You roll off the side onto your board. The ' + boatName() + ' rocks at anchor. Paddle back to it and press E to get in.', 'c'); save(); } });
+    if (land) out.push({ d: 0.2, text: 'Hop off onto ' + (DOCK.end && Math.hypot(DOCK.end[0] - m.position.x, DOCK.end[1] - m.position.z) < 9 ? 'the pier' : 'the shore'), go: () => { G.inBoat = false; boat.spd = 0; me.x = land[0]; me.z = land[1]; save(); } });
+    if (G.boat.model === 'pirogue' && !sa) out.push({ d: 0.4, text: 'Fish off the side', go: () => (!real() || has('rod')) ? startAct('fish', Math.max(1.2, 3.4 - L_('fish') * 0.07), () => { fish(1.7); if (Math.random() < 0.3) { give('rawfish'); chat('A second one on the same line!', 'g'); } }) : chat('You need a fishing rod (Craft tab).', 'r') });
+    if (!sa && !land) out.push({ d: 0.6, text: 'Swim for it (leave the boat here)', go: () => { if (!canPaddleOut()) return chat('Too far to swim without a board. Get closer to the shore.', 'r'); G.inBoat = false; boat.spd = 0; me.dry = null; me.x = m.position.x + 2.2; me.z = m.position.z; save(); } });
+    return out;
+  }
+  if (G.boat.owned && boat.mesh && !G.inCar && near(boat.mesh.position.x, boat.mesh.position.z, me.paddling ? 4 : 4.5)) out.push({ d: 0.2, text: 'Get in your ' + boatName(), go: getInBoat });
   for (const dr of DOORS) { const d = Math.hypot(dr.x - me.x, dr.z - me.z); if (d < 1.9) out.push({ d: d - 0.4, text: dr.label(), go: () => dr.kind === 'sale' && G.house !== dr.i ? saleModal(dr) : enterRoom(dr) }); }
   for (const b of blockList) if (b.id === 'home' && b.site == null) { const d = Math.hypot(b.x - me.x, b.z + 4.6 - me.z); if (d < 2) out.push({ d: d - 0.5, text: 'Go inside your house', go: () => enterRoom({ kind: 'shack', home: true, i: -2, x: b.x, z: b.z + 4.6, ry: 0, col: '#a8e0f0', name: 'Your house' }) }); }
   for (const b of blockList) if (b.id === 'shack' && b.site == null) { const d = Math.hypot(b.x - me.x, b.z + 3.6 - me.z); if (d < 1.8) out.push({ d: d - 0.4, text: 'Go inside your shack', go: () => enterRoom({ kind: 'shack', i: -1, x: b.x, z: b.z + 3.6, ry: 0, col: '#ffd6e0', name: 'Your shack' }) }); }
@@ -4683,7 +4817,9 @@ function update(dt) {
     }
   }
 
-  if (G.inCar) {
+  if (G.inBoat) {
+    driveBoat(dt, ix, iz);
+  } else if (G.inCar) {
     // ---- driving ----
     const thr = -iz, st = -ix;
     me.vel = 0;
@@ -4792,7 +4928,7 @@ function update(dt) {
   if (me.mesh.userData.swingCd > 0) me.mesh.userData.swingCd -= dt;
   $('fight').style.display = ride || me.paddling ? 'none' : '';
   if (tick % 0.25 < dt) { const W = WEAPONS.find(x => x[0] === (G.weapon || 'fists')); $('weap').innerHTML = W[2] + ' ' + W[1] + (W[0] === 'rocks' ? ' ×' + (G.inv.stone || 0) : '');
-    $('fight').innerHTML = G.inCar ? '<kbd>W</kbd><kbd>S</kbd> drive &nbsp; <kbd>A</kbd><kbd>D</kbd> steer &nbsp; <kbd>E</kbd> get out &nbsp; <kbd>L</kbd> ' + (G.car.locked ? '🔒 locked' : '🔓 lock doors') + ' &nbsp; <kbd>R</kbd> throw' : (W[0] === 'rocks' ? '<kbd>F</kbd> throw' : '<kbd>F</kbd> ' + (W[0] === 'fists' ? 'punch' : 'swing ' + W[1].toLowerCase())) + ' &nbsp; <kbd>R</kbd> throw rock (' + (G.inv.stone || 0) + ') &nbsp; <kbd>Q</kbd> change'; }
+    $('fight').innerHTML = G.inBoat ? '<kbd>W</kbd><kbd>S</kbd> throttle &nbsp; <kbd>A</kbd><kbd>D</kbd> steer &nbsp; <kbd>E</kbd> hop off / fish' : G.inCar ? '<kbd>W</kbd><kbd>S</kbd> drive &nbsp; <kbd>A</kbd><kbd>D</kbd> steer &nbsp; <kbd>E</kbd> get out &nbsp; <kbd>L</kbd> ' + (G.car.locked ? '🔒 locked' : '🔓 lock doors') + ' &nbsp; <kbd>R</kbd> throw' : (W[0] === 'rocks' ? '<kbd>F</kbd> throw' : '<kbd>F</kbd> ' + (W[0] === 'fists' ? 'punch' : 'swing ' + W[1].toLowerCase())) + ' &nbsp; <kbd>R</kbd> throw rock (' + (G.inv.stone || 0) + ') &nbsp; <kbd>Q</kbd> change'; }
   updateRocks(dt);
   updateLandlord(dt);
   updateCarThief(dt); updateGear(dt);
@@ -4840,7 +4976,12 @@ function update(dt) {
   if (!G.inCar) { me.y = me.up ? groundH(me.up.x, me.up.z) + 4.7 : inside ? 0 : Math.max(groundH(me.x, me.z), -1.2);
     blockList.forEach(b => { if (b.mesh.userData.ladder) b.mesh.userData.ladder.visible = me.up !== b; });
     me.mesh.rotation.order = 'YXZ'; me.mesh.rotation.y = me.yaw;
-    if (ride) placeRider(dt);
+    if (G.inBoat) {
+      const m = boat.mesh, back = G.boat.model === 'jetski' ? -0.4 : -2.2;
+      me.mesh.rotation.x = 0; me.yaw = m.rotation.y; me.mesh.rotation.y = me.yaw;
+      me.mesh.position.set(m.position.x + Math.sin(me.yaw) * back, m.position.y + (G.boat.model === 'jetski' ? 0.2 : 0.05), m.position.z + Math.cos(me.yaw) * back);
+      animGuy(me.mesh, 0, dt, false, { sit: 1, look: G.boat.model === 'jetski' ? 0 : Math.sin(tick * 0.4) * 0.3 });
+    } else if (ride) placeRider(dt);
     else if (me.paddling) {
       if (me.mesh.userData.rideQ) { me.mesh.userData.rideQ = null; me.mesh.quaternion.identity(); me.mesh.rotation.order = 'YXZ'; me.mesh.rotation.y = me.yaw; }
       const sa = spotAt(me.x, me.z), wy = (sa ? (sa.s.v3 ? 0.06 + v3HeightAt(sa.s, sa.u, sa.v) : 0.36 + sa.h) : 0.05 + Math.sin(tick * 1.3 + me.x * 0.08) * 0.1) + 0.3;
@@ -5166,10 +5307,11 @@ function update(dt) {
   const fx = G.inCar ? car.mesh.position.x : me.x, fz = G.inCar ? car.mesh.position.z : me.z;
   cam.x = lerp(cam.x, fx, Math.min(1, dt * 8)); cam.z = lerp(cam.z, fz, Math.min(1, dt * 8));
   if (G.inCar && Math.abs(car.spd) > 3) cam.yaw += wrapA(car.mesh.rotation.y + Math.PI - cam.yaw) * dt * 1.5;
+  if (G.inBoat && Math.abs(boat.spd) > 3 && cam.look <= 0) cam.yaw += wrapA(boat.mesh.rotation.y + Math.PI - cam.yaw) * dt * 1.2;
   const gta = cam.mode === 'gta';
   cam.look -= dt;
   // GTA: when you run forward and leave the mouse alone, the camera swings round behind you
-  if (gta && !G.inCar && me.spd > 1 && cam.look <= 0) cam.yaw += wrapA(me.yaw + Math.PI - cam.yaw) * dt * 1.6;
+  if (gta && !G.inCar && !G.inBoat && me.spd > 1 && cam.look <= 0) cam.yaw += wrapA(me.yaw + Math.PI - cam.yaw) * dt * 1.6;
   if (ride && cam.look <= 0) {   // on a wave: sit behind the rider and a little toward the beach, looking along the face
     const s = ride.s, ox = -Math.sin(me.yaw) * 0.8 - s.n[0] * 0.6, oz = -Math.cos(me.yaw) * 0.8 - s.n[1] * 0.6;
     cam.yaw += wrapA(Math.atan2(ox, oz) - cam.yaw) * Math.min(1, dt * 2.2);
@@ -5179,8 +5321,8 @@ function update(dt) {
   }
   const fy = (ride ? ride.y + 0.4 : me.up && !G.inCar ? me.y : Math.max(groundH(fx, fz), 0)) + (gta ? 1.75 : 1.5);
   cam.y = lerp(cam.y, fy, Math.min(1, dt * 6));
-  const cd = cam.dist * (G.inCar ? (gta ? 1.5 : 1.3) : ride ? 1.25 : 1);
-  const sh = gta && !G.inCar ? 0.75 : 0, rx = Math.cos(cam.yaw) * sh, rz = -Math.sin(cam.yaw) * sh;   // over the right shoulder
+  const cd = cam.dist * (G.inCar || G.inBoat ? (gta ? 1.5 : 1.3) : ride ? 1.25 : 1);
+  const sh = gta && !G.inCar && !G.inBoat ? 0.75 : 0, rx = Math.cos(cam.yaw) * sh, rz = -Math.sin(cam.yaw) * sh;   // over the right shoulder
   // pull in when a wall, house or tree is between you and the camera
   let cdd = cd;
   if (gta && !me.up) { const ux = Math.sin(cam.yaw) * Math.cos(cam.pitch), uz = Math.cos(cam.yaw) * Math.cos(cam.pitch); for (let t = 0.8; t < cd; t += 0.4) { const h = solidAt(cam.x + rx + ux * t, cam.z + rz + uz * t, 0.25, 'cam'); if (h && !h.water) { cdd = Math.max(1.1, t - 0.6); break; } } }
@@ -5195,7 +5337,7 @@ function update(dt) {
   cam.roll = lerp(cam.roll || 0, ride ? -ride.lean * 0.12 : gta && !G.inCar ? clamp(-(me.turnRate || 0) * 0.012 * clamp(me.spd / 8, 0, 1), -0.05, 0.05) : 0, Math.min(1, dt * 4));
   if (cam.roll) camera.rotateZ(cam.roll);
 
-  updateParts(dt);
+  updateParts(dt); placeBoat(dt);
   // sound: the sea gets louder as you get near it, the nearest breaking wave thunders, frogs whistle at night
   { const sd = sdAt(me.x, me.z), sea = clamp(1 - sd / 60, 0, 1); let crash = 0;
     SPOTS.forEach(s => { const W = s.v3; if (!W) return; const d = Math.hypot(W.grp.position.x - me.x, W.grp.position.z - me.z); crash = Math.max(crash, W.fade * W.setK * (1 - smooth(20, 160, d)) * (0.6 + 0.4 * W.barrel)); });
@@ -5649,6 +5791,7 @@ function hud() {
   blockList.forEach(b => dot(b.x, b.z, '#c8a070', 1.6));
   const hp = homePos(); dot(hp[0], hp[1], '#ff981f', 3);
   if (G.car.owned && !G.inCar && !G.car.stolen) dot(car.mesh.position.x, car.mesh.position.z, '#7fd6b0', 2.5);
+  if (G.boat.owned && !G.inBoat && boat.mesh) dot(boat.mesh.position.x, boat.mesh.position.z, '#ffffff', 2.5);
   mm.restore(); mm.fillStyle = '#fff'; mm.fillRect(73, 73, 4, 4);
   // floating labels
   const w = innerWidth, h = innerHeight;
@@ -5768,8 +5911,10 @@ if (G.keyThief) spawnKeyThief(G.keyThief);
 chat('WASD move · mouse looks (click first) · Shift run · E use · F or click: hit with what you hold · R or right-click: throw a rock · Q change weapon · Tab target · B build · M map · V camera', 'o');
 if (!G.goals.surf1 && G.started) chat('Freights Bay is just west of your plot. Walk into the sea to paddle out.', 'c');
 if (G.inCar) { me.x = car.mesh.position.x; me.z = car.mesh.position.z; }
+if (G.boat.owned) setBoatModel(G.boat.model); else G.inBoat = false;
+if (G.inBoat) { me.x = G.boat.x; me.z = G.boat.z; }
 requestAnimationFrame(frame);
-window.__isle = { localTalk, sellBoard, NPCS, boreZ, v3Swell, SPOTS, waveLocal, openShop, openHelp, autoWalk, moveBody, placeBlock, siteDone, stashHome, myHouse, blockList, PC, me, interactables, update: dt => update(dt), objective, tradeWith, traderPack, dropGear, pickGear, spawnKeyThief, getGear: () => gear, getKeyThief: () => keyThief, updateGear, rockHits, makeCar, carState: () => car, CARS, buyCar, swapCar, sellCar, carPhysics, setCarModel, duelRecap, startTitle, endTitle, getTitle: () => title, updateTitle, QL, setQuality, frameOf, AIRIDES, LINEUP_: () => LINEUP, getDuel: () => duel, startWaterDuel, startReplay, stopReplay, getReplay: () => replay, updateReplay, getRecs: () => [lastRec, bestRec], CROWD, startRide, catchState, getRide: () => ride, waveWorld, waveLocal, objective, SND, claimPlot, setDecor, whoAtDoor, renderPeek, updateV3, v3HeightAt, SALES, saleModal, placeHomeBoard, autoBuild, stealCar, setLock, getThief: () => carThief, DOORS, enterRoom, exitRoom, getInside: () => inside, lockState: () => [lockTried, lockFailed], setWeapon, cycleWeapon, melee, LINEUP, PROJ, throwRock, armUp, sleep, evictCheck, getLL: () => landlord, talkLandlord, BOARS, ABAND, stashHome, hurt, CAMPS, dog, campState, setCamMode, G, me, SPOTS, TOWNS, HOME, car, RAIDERS, blockList, goSurf, openMap, spawnRaider, groundH, keys, pressed, cam, CHICK, TREES, give, startDuel, NPCS, setBuild,
+window.__isle = { spotAt, DOCK, BOATS, boat, buyBoat, driveBoat, getInBoat, localTalk, sellBoard, NPCS, boreZ, v3Swell, SPOTS, waveLocal, openShop, openHelp, autoWalk, moveBody, placeBlock, siteDone, stashHome, myHouse, blockList, PC, me, interactables, update: dt => update(dt), objective, tradeWith, traderPack, dropGear, pickGear, spawnKeyThief, getGear: () => gear, getKeyThief: () => keyThief, updateGear, rockHits, makeCar, carState: () => car, CARS, buyCar, swapCar, sellCar, carPhysics, setCarModel, duelRecap, startTitle, endTitle, getTitle: () => title, updateTitle, QL, setQuality, frameOf, AIRIDES, LINEUP_: () => LINEUP, getDuel: () => duel, startWaterDuel, startReplay, stopReplay, getReplay: () => replay, updateReplay, getRecs: () => [lastRec, bestRec], CROWD, startRide, catchState, getRide: () => ride, waveWorld, waveLocal, objective, SND, claimPlot, setDecor, whoAtDoor, renderPeek, updateV3, v3HeightAt, SALES, saleModal, placeHomeBoard, autoBuild, stealCar, setLock, getThief: () => carThief, DOORS, enterRoom, exitRoom, getInside: () => inside, lockState: () => [lockTried, lockFailed], setWeapon, cycleWeapon, melee, LINEUP, PROJ, throwRock, armUp, sleep, evictCheck, getLL: () => landlord, talkLandlord, BOARS, ABAND, stashHome, hurt, CAMPS, dog, campState, setCamMode, G, me, SPOTS, TOWNS, HOME, car, RAIDERS, blockList, goSurf, openMap, spawnRaider, groundH, keys, pressed, cam, CHICK, TREES, give, startDuel, NPCS, setBuild,
   run: (n, dt = 1 / 30) => { for (let i = 0; i < n; i++) update(dt); },
   step: (n, dt = 1 / 30) => { for (let i = 0; i < n; i++) update(dt); renderer.render(scene, camera); hud(); } };
 })();
