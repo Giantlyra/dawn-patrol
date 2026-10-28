@@ -5978,6 +5978,8 @@ body.touch #rgNB{display:grid}#rgNB{display:none;position:fixed;right:max(170px,
     RACERS.forEach(r => dot(r.x, r.z, '#ffffff', 2));
   }
   function onPassOut() { clearHeat(true); for (const c of [...COPS]) removeCop(c); for (const h of [...HELIS]) removeHeli(h); car.flip = null; if (ev && !ev.done) finishEvent(false, 'You blacked out.'); }
+  // tell players the islands are merged, once per load, after the title screen
+  { const t = setInterval(() => { if ($('title').hidden && $('modal').hidden) { clearInterval(t); chat('V5: Barbados is joined to THE RIDGE. Drive east over the causeway from Bathsheba (orange label on the map, M). Every car drifts: Space = handbrake.', 'c'); } }, 1000); }
   return { drivePlayer, unpose, pose, update, hud, interact, mmDots, onPassOut, heat, COPS, HELIS, MISSILES, RACERS, EVENTS, startEvent, addHeat, forceStars, drift, doneDonut, DONUTS, spawnHeli, fireMissile, getEv: () => ev, PEND, CONES, up, R0, openGarage };
 })();
 
