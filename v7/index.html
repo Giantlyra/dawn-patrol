@@ -4615,7 +4615,7 @@ function steal(o, t) {
     scene.remove(o.mesh); if (o.sayL) { o.sayL.el.remove(); LBL.splice(LBL.indexOf(o.sayL), 1); } RAIDERS.splice(RAIDERS.indexOf(o), 1);
     return;
   }
-  else if (t.kind === 'you' && G.inCar) {   // you're in the car: they can't reach your pockets
+  else if (t.kind === 'you' && (G.inCar || FL.active())) {   // you're in the car (or up in a plane): they can't reach your pockets
     o.triedCar = true; o.stun = 2.5; punchAnim(o.mesh); say(o, pick(['Get out the car!', 'Forget it.', 'Come on…']), 2.5); o.st = 'flee'; return;
   }
   else if (t.kind === 'you') {
@@ -6391,6 +6391,7 @@ const FL = (() => {
   function surfY(x, z) { const h = groundH(x, z); return P.d.float && h < 0 ? 0.15 + Math.sin(performance.now() / 1000 * 1.3 + x * 0.08) * 0.08 : h; }
   function parkAt(x, z, yaw) {
     const p = restPitch(); P.pos.set(x, surfY(x, z) + gearH(p), z); P.vel.set(0, 0, 0); P.w.set(0, 0, 0);
+    P.hp = 100; P.smokeHit = false;
     P.q.setFromEuler(_e.set(-p, yaw, 0, 'YXZ')); P.thr = 0; P.ground = true; P.crashed = 0; P.o.g.visible = true; P.pilot = false; P.stall = false; P.smoke = false;
     pose();
   }
@@ -6424,6 +6425,8 @@ const FL = (() => {
       ring() { [784, 1047].forEach((f, i) => setTimeout(() => tone(f, f, 0.18, 0.08), i * 70)); },
       win() { [523, 659, 784, 1047, 1319].forEach((f, i) => setTimeout(() => tone(f, f, 0.25, 0.08), i * 90)); },
       chirp() { tone(1400, 600, 0.12, 0.05, 'triangle'); },
+      gun() { tone(220, 60, 0.05, 0.07, 'square'); },
+      hit() { tone(140, 40, 0.18, 0.14, 'sawtooth'); },
       pop() { tone(180, 90, 0.3, 0.12, 'triangle'); },
       splash() { tone(300, 60, 0.6, 0.1, 'sawtooth'); }
     };
@@ -6471,6 +6474,7 @@ const FL = (() => {
       if (pk.has('c')) camMode = camMode === 'chase' ? 'cockpit' : 'chase';
       if (pk.has('t') && d.smoke) P.smoke = !P.smoke;
       if (pk.has('b')) bail();
+      if (pk.has('r') && P.ground) chat('Guns only work in the air.', 'o');
       if (pk.has('l')) { const k = R0(); k.assist = k.assist === false; chat(k.assist === false ? 'Landing assist off. You\'re on your own.' : 'Landing assist on: line up with a runway and come in low, it holds a gentle glide and flares for you.', 'c'); }
     }
     bodyAxes();
@@ -6822,6 +6826,7 @@ const FL = (() => {
       <li><b>Stall:</b> too slow and too nose-high and the wing stops lifting (the horn beeps, STALL flashes). Push the nose down to get speed back.</li>
       <li><b>Land:</b> line up from far out, throttle back, flaps down (<kbd>F</kbd>), aim at the yellow line near the start of the runway, and just before the wheels touch, ease S back to flare. Come down gently and with your wings level. Too hard, banked or nose-first and you crash.</li>
       <li><b>Landing assist</b> (on by default, <kbd>L</kbd> toggles): line up with a runway, come in low and let go. It levels the wings, holds the centreline and a gentle glide, sets the throttle, flares and brakes. Hold S or W to fly the nose yourself.</li>
+      <li><b>Dogfights:</b> hold <kbd>R</kbd> to fire your guns (rounds bend a little toward a plane near your nose). Other pilots fly round the islands (white ◇ markers). Shoot one and they fight back or run, and you get wanted stars. With stars, <b>police jets</b> (red ◆) chase you and shoot. Outrun them or shoot them all down to lose the stars. Watch your <b>hull %</b>: at 0 you're shot down.</li>
       <li><kbd>C</kbd> cockpit/chase camera. Drag the mouse to look around. <kbd>B</kbd> jump out with a parachute (above 40 m). <kbd>E</kbd> get out once stopped. Jets: <kbd>G</kbd> gear. Biplane: <kbd>T</kbd> smoke.</li>
       <li>Big cyan rings with a light beam start <b>ring courses</b>: fly through to begin. Land on every runway for the island stamps, and jump for the bullseye targets.</li>
       <li><kbd>M</kbd> shows the whole ocean. Click it to set a waypoint.</li></ul><div class="foot"><button class="btn" id="fhClose">Got it</button></div>`, box => box.querySelector('#fhClose').addEventListener('click', closeModal));
@@ -6916,7 +6921,7 @@ const FL = (() => {
   // ---------- HUD: speed, altitude, climb, throttle, attitude ----------
   {
     const st = document.createElement('style');
-    st.textContent = `#flHud{position:fixed;left:50%;bottom:calc(max(10px,env(safe-area-inset-bottom)) + 34px);transform:translateX(-50%);display:flex;gap:14px;align-items:center;padding:6px 12px;font-family:'Silkscreen';color:#fff;text-shadow:1px 1px 0 #000;pointer-events:none;z-index:6}
+    st.textContent = `#dfMarks div{position:fixed;left:0;top:0;font-family:'Silkscreen';font-size:11px;color:#fff;text-shadow:1px 1px 0 #000;pointer-events:none;z-index:6;white-space:nowrap}#dfMarks div.h{color:#ff4a3a;font-size:13px}#flHud{position:fixed;left:50%;bottom:calc(max(10px,env(safe-area-inset-bottom)) + 34px);transform:translateX(-50%);display:flex;gap:14px;align-items:center;padding:6px 12px;font-family:'Silkscreen';color:#fff;text-shadow:1px 1px 0 #000;pointer-events:none;z-index:6}
 #flHud .fi{display:grid;justify-items:center;line-height:1}#flHud .fi b{font-weight:400;font-size:22px;color:var(--yel)}#flHud .fi span{font-size:10px;color:#cde}
 #flThr{width:12px;height:52px;background:rgba(0,0,0,.5);border:1px solid #000;position:relative}#flThr i{position:absolute;left:0;right:0;bottom:0;background:var(--org)}#flThr.ab i{background:#ff5030;box-shadow:0 0 8px #ff6a20}
 #flAtt{width:64px;height:64px;border-radius:50%;border:2px solid #000;background:#000}#flFlags{display:grid;font-size:10px;gap:2px;color:#9cc}#flFlags .on{color:var(--grn)}
@@ -6928,8 +6933,8 @@ body.touch #flT{display:flex}#flT{display:none;position:fixed;right:max(104px,en
 #flT button{width:58px;height:46px;border-radius:12px;background:rgba(40,70,90,.85);border:3px solid var(--edge);color:var(--cyan);font-family:'Silkscreen';font-size:10px}`;
     document.head.appendChild(st);
     const d = document.createElement('div');
-    d.innerHTML = `<div id="flHud" class="panel" hidden><div class="fi"><b id="flSpd">0</b><span>km/h</span></div><div class="fi"><b id="flAlt">0</b><span>m high</span></div><div class="fi"><b id="flVs">0</b><span id="flVsi">climb m/s</span></div><div id="flThr"><i></i></div><canvas id="flAtt" width="64" height="64"></canvas><div id="flFlags"><span id="flFl">FLAPS</span><span id="flGr">GEAR</span><span id="flCm">CHASE</span></div></div>
-<div id="flWarn" hidden></div><div id="flCourse" class="panel" hidden></div><div id="flWp" hidden></div>
+    d.innerHTML = `<div id="flHud" class="panel" hidden><div class="fi"><b id="flSpd">0</b><span>km/h</span></div><div class="fi"><b id="flAlt">0</b><span>m high</span></div><div class="fi"><b id="flVs">0</b><span id="flVsi">climb m/s</span></div><div class="fi"><b id="flHp">100</b><span>hull %</span></div><div id="flThr"><i></i></div><canvas id="flAtt" width="64" height="64"></canvas><div id="flFlags"><span id="flFl">FLAPS</span><span id="flGr">GEAR</span><span id="flCm">CHASE</span></div></div>
+<div id="flWarn" hidden></div><div id="dfMarks"></div><div id="flCourse" class="panel" hidden></div><div id="flWp" hidden></div>
 <div id="flT"><button id="flTU" type="button">THR+</button><button id="flTD" type="button">THR-</button><button id="flTB" type="button">JUMP</button></div>`;
     document.body.appendChild(d);
     const hold = (el, k) => { el.addEventListener('pointerdown', e => { e.preventDefault(); touch[k] = true; }); for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) el.addEventListener(ev, () => { touch[k] = false; }); };
@@ -6937,11 +6942,13 @@ body.touch #flT{display:flex}#flT{display:none;position:fixed;right:max(104px,en
   }
   const att = $('flAtt').getContext('2d'), cache = {}, setT = (id, t) => { if (cache[id] !== t) { cache[id] = t; $(id).textContent = t; } };
   function hud() {
+    dfMarks();
     const fl = mode === 'plane', sky = mode === 'sky';
     $('flHud').hidden = !(fl || sky); $('flT').style.visibility = fl || sky ? '' : 'hidden';
     const k = R0();
     if (fl || sky) {
       const pos = fl ? P.pos : SK.pos, vel = fl ? P.vel : SK.vel, alt = pos.y - Math.max(groundH(pos.x, pos.z), 0);
+      setT('flHp', String(Math.round(fl ? (P.hp == null ? 100 : P.hp) : 100))); $('flHp').style.color = fl && P.hp < 40 ? '#ff5040' : DF.hitT > 0 ? '#ffb040' : ''; DF.hitT -= 1 / 60;
       setT('flSpd', String(Math.round(vel.length() * 3.6))); setT('flAlt', String(Math.max(0, Math.round(alt - (fl ? gearH(0) : 0))))); setT('flVs', (vel.y >= 0 ? '+' : '') + vel.y.toFixed(1));
       $('flThr').firstChild.style.height = ((fl ? P.thr : 0) * 100).toFixed(0) + '%'; $('flThr').classList.toggle('ab', fl && P.abT > 0.5);
       $('flFl').className = fl && P.flaps ? 'on' : ''; $('flGr').className = fl && (!P.d.jet || !P.gearUp) ? 'on' : ''; setT('flGr', fl && P.d.jet ? (P.gearUp ? 'GEAR UP' : 'GEAR DN') : sky ? (SK.chute ? 'CANOPY' : 'FREEFALL') : 'GEAR'); setT('flCm', camMode.toUpperCase());
@@ -6971,7 +6978,7 @@ body.touch #flT{display:flex}#flT{display:none;position:fixed;right:max(104px,en
     if (!$('where').textContent) { const I = isleAt(me.x, me.z); if (I && sdAt(me.x, me.z) > -20) $('where').textContent = I.name; else if (Math.hypot(me.x - 260, me.z - 360) < 160) $('where').textContent = 'Airport Key'; else if (mode) $('where').textContent = 'Over the ocean'; }
   }
   function hint() {
-    if (mode === 'plane') return '<kbd>Shift</kbd>/<kbd>Space</kbd> throttle &nbsp; <kbd>W</kbd><kbd>S</kbd> pitch &nbsp; <kbd>A</kbd><kbd>D</kbd> bank &nbsp; <kbd>F</kbd> flaps &nbsp; <kbd>C</kbd> camera &nbsp; <kbd>B</kbd> jump &nbsp; <kbd>E</kbd> get out';
+    if (mode === 'plane') return '<kbd>Shift</kbd>/<kbd>Space</kbd> throttle &nbsp; <kbd>W</kbd><kbd>S</kbd> pitch &nbsp; <kbd>A</kbd><kbd>D</kbd> bank &nbsp; <kbd>R</kbd> guns &nbsp; <kbd>F</kbd> flaps &nbsp; <kbd>C</kbd> camera &nbsp; <kbd>B</kbd> jump &nbsp; <kbd>E</kbd> get out';
     if (mode === 'sky') return SK.chute ? '<kbd>A</kbd><kbd>D</kbd> steer &nbsp; <kbd>W</kbd> faster &nbsp; <kbd>S</kbd> flare' : '<kbd>Space</kbd> open canopy &nbsp; <kbd>F</kbd> wingsuit &nbsp; <kbd>W</kbd> dive &nbsp; <kbd>A</kbd><kbd>D</kbd> turn';
     return null;
   }
@@ -7054,6 +7061,7 @@ body.touch #flT{display:flex}#flT{display:none;position:fixed;right:max(104px,en
     pk.clear();
   }
   function update(dt) {   // everything else: the parked/empty plane, the pilotless glide, effects, fog, water
+    dogfight(dt);
     if (P.crashed > 0) { P.crashed -= dt; if (P.crashed <= 0) { P.crashed = 0; afterCrash(); } }
     else if (mode !== 'plane' && P.o && !P.ground) { const pv = P.pos.clone(); fly(dt); courseStep(dt, pv); }   // nobody flying it (you jumped): it glides on until it comes down
     if (hop) hop.t += dt;
@@ -7072,7 +7080,8 @@ body.touch #flT{display:flex}#flT{display:none;position:fixed;right:max(104px,en
     } else AU.set(0, mode === 'sky' ? SK.vel.length() * 0.8 : 0, false, false);
     if (mode === 'sky') { if (SK.chute) { canopy.visible = true; canopy.position.set(SK.pos.x, SK.pos.y + 0.6, SK.pos.z); canopy.rotation.y = SK.yaw; } else canopy.visible = false; }
     // the cops can't follow you into the sky
-    if (mode && RG.heat.stars) { const alt = me.y; void alt; heatT += dt; if (heatT > 5) { heatT = 0; RG.clearHeat(); chat('Up here the cops can\'t touch you. They lose you in the sky.', 'g'); } } else heatT = 0;
+    // (in the sky the heat sticks: police jets come after you, see dogfight())
+    heatT = 0;
     // fog opens up when you're high, so you can see the islands on the horizon
     const cy = camera.position.y, hi = clamp((cy - 20) / 300, 0, 1);
     const wantF = mode ? lerp(1100, 4200, hi) : lerp(420, 1400, hi), wantN = mode ? lerp(250, 900, hi) : 130;
@@ -7106,8 +7115,127 @@ body.touch #flT{display:flex}#flT{display:none;position:fixed;right:max(104px,en
   if (R0().flying) { R0().flying = false; const r = nearestStrip(G.x, G.z), p = landSpot(r); me.x = p[0]; me.z = p[1]; R0().park = null; parkAt(PARK.x, PARK.z, PARK.yaw); }
   { const t = setInterval(() => { if ($('title').hidden && $('modal').hidden) { clearInterval(t); chat('V7: four new sports! Wingsuit off the Isla Fuego volcano, dirt bikes on Dune Island, kitesurfing in the Coral Atoll lagoon and snowboarding on the new Frost Peak. Fly there from Airport Key (south of your plot). J = sports board.', 'c'); } }, 1000); }
   addEventListener('keydown', e => { if ((e.key === 'j' || e.key === 'J') && $('modal').hidden && $('title').hidden) openSports(); });
+
+  // ---------- dogfights: other pilots share the sky, R fires your guns, and wanted stars send police jets after you ----------
+  const BANDITS = [], BUL = [], DF = { trafT: 0, copT: 0, fireCd: 0, coolT: 0, told: false, hitT: 0 };
+  const bulGeo = new THREE.BoxGeometry(0.12, 0.12, 5), bulMe = new THREE.MeshBasicMaterial({ color: 0xffe066 }), bulThem = new THREE.MeshBasicMaterial({ color: 0xff5040 });
+  const _m4 = new THREE.Matrix4(), _dv = V(), _tv = V(), _up = V(0, 1, 0);
+  const flyingNow = () => mode === 'plane' && !P.ground && !P.crashed;
+  function spawnBandit(kind) {
+    const id = kind === 'police' ? 'swift' : pick(['cub', 'viper', 'gull', 'viper']), d = PLANES[id], o = planeMesh(id); scene.add(o.g);
+    const a = rand(0, TAU), r = kind === 'police' ? rand(900, 1300) : rand(500, 1400);
+    const pos = V(P.pos.x + Math.cos(a) * r, Math.max(P.pos.y + rand(-40, 80), 90), P.pos.z + Math.sin(a) * r);
+    const toP = V(P.pos.x - pos.x, 0, P.pos.z - pos.z).normalize(), h = kind === 'police' ? toP : V(Math.cos(a + 1.6), 0, Math.sin(a + 1.6));
+    const sp = kind === 'police' ? 62 : d.vs * 1.9;
+    const B = { id, d, o, kind, pos, vel: h.multiplyScalar(sp), sp, hp: kind === 'police' ? 70 : 45, hostile: kind === 'police', fireCd: rand(1, 3), burst: 0, bank: 0, dead: 0, spin: 0, smoke: false, wp: null };
+    if (kind === 'police') { const gl = RG.glow(0x3a6bff, 3.2, 1); gl.position.set(0, 1, 0); o.g.add(gl); B.beacon = gl; }
+    BANDITS.push(B); return B;
+  }
+  function removeBandit(B) { scene.remove(B.o.g); BANDITS.splice(BANDITS.indexOf(B), 1); }
+  function fireFrom(pos, dir, inherit, mine) {
+    const m = new THREE.Mesh(bulGeo, mine ? bulMe : bulThem); m.position.copy(pos); m.lookAt(_tv.copy(pos).add(dir)); scene.add(m);
+    BUL.push({ m, pos: pos.clone(), vel: dir.clone().multiplyScalar(340).add(inherit), t: 0, mine });
+  }
+  function killBandit(B, why) {
+    B.dead = 1; B.smoke = true; B.spin = rand(-2.5, 2.5);
+    const pay = B.kind === 'police' ? 150 : 90; G.cash += pay; AU.chime && AU.chime();
+    chat(why + ' +$' + pay, B.kind === 'police' ? 'g' : 'o');
+    if (B.kind === 'police') DF.copT = 20; else RG.addHeat(2, 'You shot down a plane! Police jets are scrambling.');
+  }
+  function dogfight(dt) {
+    const k = R0(), flying = flyingNow(), stars = RG.heat.stars || 0;
+    // who's up here: a few civilian pilots, plus police jets while you're wanted
+    DF.trafT -= dt; DF.copT -= dt;
+    const traffic = BANDITS.filter(b => b.kind === 'traffic' && !b.dead).length, cops = BANDITS.filter(b => b.kind === 'police' && !b.dead).length;
+    if (flying && traffic < 3 && DF.trafT <= 0) { DF.trafT = 8; spawnBandit('traffic'); }
+    if (flying && stars > 0 && cops < Math.min(4, stars) && DF.copT <= 0) { DF.copT = 7; spawnBandit('police'); chat(cops ? 'Another police jet joins the chase!' : 'Police jets! They\'re coming for you. R fires your guns, or outrun them.', 'r'); }
+    if (!mode) { for (let i = BANDITS.length - 1; i >= 0; i--) if (BANDITS[i].kind === 'police' || Math.hypot(BANDITS[i].pos.x - P.pos.x, BANDITS[i].pos.z - P.pos.z) > 1800) removeBandit(BANDITS[i]); }
+    // stars cool off once no police jet is close for a while
+    // stars stick while a police jet has you; outrun them or shoot them all down and they fade like they do on the ground
+    if (mode && stars && BANDITS.some(b => b.kind === 'police' && !b.dead && !b.leaving && b.pos.distanceTo(P.pos) < 1500)) { RG.heat.lostT = 0; RG.heat.seen = true; }
+    if (!stars) BANDITS.forEach(b => { if (b.kind === 'police' && !b.leaving) { b.leaving = true; b.hostile = false; } });
+    // your guns
+    DF.fireCd -= dt;
+    if (flying && keys.r && DF.fireCd <= 0) {
+      DF.fireCd = 0.075; bodyAxes();
+      let aim = _dv.copy(_f), best = null, bd = 0.14;
+      for (const B of BANDITS) { if (B.dead) continue; _tv.copy(B.pos).addScaledVector(B.vel, B.pos.distanceTo(P.pos) / 340).sub(P.pos); const dist = _tv.length(); if (dist > 700) continue; const ang = _tv.normalize().angleTo(_f); if (ang < bd) { bd = ang; best = _tv.clone(); } }
+      if (best) aim = best;   // a little help: rounds bend toward a bandit near your nose
+      for (const sd of [-1, 1]) fireFrom(_tv.copy(P.pos).addScaledVector(_r, sd * 1.4).addScaledVector(_f, 2), aim.clone().add(V(rand(-0.01, 0.01), rand(-0.01, 0.01), rand(-0.01, 0.01))).normalize(), P.vel, true);
+      AU.gun();
+      if (!DF.told) { DF.told = true; chat('Guns! Hold R to fire. Shooting other planes gets the police after you.', 'o'); }
+    }
+    // the other planes
+    for (let i = BANDITS.length - 1; i >= 0; i--) {
+      const B = BANDITS[i];
+      if (B.dead) {
+        B.vel.y -= 9.8 * dt; B.pos.addScaledVector(B.vel, dt); B.o.g.position.copy(B.pos); B.o.g.rotateZ(B.spin * dt); B.o.g.rotateX(0.4 * dt);
+        if (Math.random() < dt * 40) RG.SMOKE.add(B.pos.x, B.pos.y, B.pos.z, rand(-1, 1), rand(0, 2), rand(-1, 1), 2.5, 1.5, 6, 0.15, 0.13, 0.12, 0.7, 0.8, 0);
+        if (B.pos.y < Math.max(groundH(B.pos.x, B.pos.z), 0) + 0.5) { RG.boom(B.pos.x, Math.max(B.pos.y, 0.5), B.pos.z, true); removeBandit(B); }
+        continue;
+      }
+      const toP = _tv.copy(P.pos).sub(B.pos), dist = toP.length();
+      if (dist > 3000 || (B.leaving && dist > 1500)) { removeBandit(B); continue; }
+      // where to go: hostile ones lead you, the rest wander between the islands
+      let want;
+      if (B.hostile && mode === 'plane' && !P.crashed) want = _dv.copy(P.pos).addScaledVector(P.vel, Math.min(2, dist / 300)).sub(B.pos).normalize();
+      else { if (B.leaving && !B.left) { B.left = true; B.wp = V(B.pos.x * 4, 400, B.pos.z * 4); }
+        if (!B.wp || (!B.leaving && B.pos.distanceTo(B.wp) < 120)) B.wp = V(P.pos.x + rand(-900, 900), rand(110, 260), P.pos.z + rand(-900, 900)); want = _dv.copy(B.wp).sub(B.pos).normalize(); }
+      const gy = Math.max(groundH(B.pos.x + B.vel.x, B.pos.z + B.vel.z), 0); if (B.pos.y < gy + 70) want.y = Math.max(want.y, 0.5);
+      if (B.pos.y > 1400) want.y = Math.min(want.y, -0.2);
+      const dir = B.vel.clone().normalize(), turn = (B.kind === 'police' ? 0.75 : B.hostile ? 0.65 : 0.3) * dt, ang = dir.angleTo(want);
+      const side = dir.clone().cross(want).y;
+      if (ang > 1e-3) dir.lerp(want, Math.min(1, turn / ang)).normalize();
+      B.bank = lerp(B.bank, clamp(-side * 3, -1.1, 1.1), Math.min(1, dt * 3));
+      const spd = B.kind === 'police' ? clamp(P.vel.length() + (dist > 300 ? 30 : dist > 130 ? 6 : -5), 40, 112) : B.hostile ? B.d.vmax * 0.85 : B.sp;
+      const cur = B.vel.length(); B.vel.copy(dir).multiplyScalar(lerp(cur, spd, Math.min(1, dt * 0.6)));
+      B.pos.addScaledVector(B.vel, dt);
+      B.o.g.position.copy(B.pos); B.o.g.lookAt(_tv.copy(B.pos).add(B.vel)); B.o.g.rotateZ(B.bank);
+      if (B.o.prop) B.o.prop.rotation.z += dt * 40;
+      if (B.beacon) B.beacon.visible = tick % 0.6 < 0.3;
+      if (B.smoke && Math.random() < dt * 20) RG.SMOKE.add(B.pos.x, B.pos.y, B.pos.z, 0, 1, 0, 1.5, 1, 4, 0.2, 0.2, 0.2, 0.6, 0.8, 0);
+      // shoot when you're in front of their nose
+      B.fireCd -= dt;
+      if (B.hostile && flying && dist < 520 && dir.angleTo(_tv.copy(P.pos).sub(B.pos).normalize()) < 0.16) {
+        if (B.fireCd <= 0) { B.fireCd = B.burst > 0 ? 0.11 : rand(1.2, 2.2); B.burst = B.burst > 0 ? B.burst - 1 : 9; const lead = _tv.copy(P.pos).addScaledVector(P.vel, dist / 340).sub(B.pos).normalize(); fireFrom(B.pos.clone().addScaledVector(dir, 4), lead.add(V(rand(-0.025, 0.025), rand(-0.025, 0.025), rand(-0.025, 0.025))).normalize(), B.vel, false); }
+      }
+    }
+    // rounds in flight
+    for (let i = BUL.length - 1; i >= 0; i--) {
+      const b = BUL[i], p0 = b.pos.clone(); b.t += dt; b.pos.addScaledVector(b.vel, dt); b.m.position.copy(b.pos);
+      let gone = b.t > 1.8 || b.pos.y < Math.max(groundH(b.pos.x, b.pos.z), 0);
+      if (!gone) {
+        if (b.mine) {
+          for (const B of BANDITS) { if (B.dead) continue; if (segDist(p0, b.pos, B.pos) < 6) { gone = true; B.hp -= 7; RG.SPARK.add && RG.SPARK.add(B.pos.x, B.pos.y, B.pos.z, rand(-4, 4), rand(-2, 4), rand(-4, 4), 0.4, 0.5, 1.2, 1, 0.8, 0.3, 1, 0, 0); if (B.hp < 25) B.smoke = true;
+            if (!B.hostile) { B.hostile = true; if (B.kind === 'traffic') { RG.addHeat(1.2, 'You shot at a civilian plane! The cops are after you.'); chat(Math.random() < 0.6 ? 'The pilot banks round to fight back!' : 'The pilot panics and runs!', 'r'); if (Math.random() >= 0.6) { B.hostile = false; B.wp = V(B.pos.x * 3, 300, B.pos.z * 3); } } }
+            if (B.hp <= 0) killBandit(B, B.kind === 'police' ? 'Police jet down!' : 'Splash one! The ' + B.d.name + ' goes down in flames.');
+            break; } }
+        } else if (flyingNow() && segDist(p0, b.pos, P.pos) < 5) {
+          gone = true; P.hp = (P.hp == null ? 100 : P.hp) - 6; DF.hitT = 0.3; AU.hit();
+          if (P.hp <= 35 && !P.smokeHit) { P.smokeHit = true; chat('You\'re hit bad! Smoke pouring out. Land, or bail out (B).', 'r'); }
+          if (P.hp <= 0) { P.hp = 0; crash('Shot down! Your ' + P.d.name + ' spirals into the ' + (groundH(P.pos.x, P.pos.z) < 0 ? 'sea.' : 'ground.')); }
+        }
+      }
+      if (gone) { scene.remove(b.m); BUL.splice(i, 1); }
+    }
+    if (P.smokeHit && P.o && P.o.g.visible && !P.ground && Math.random() < dt * 30) RG.SMOKE.add(P.pos.x, P.pos.y, P.pos.z, rand(-1, 1), rand(0, 2), rand(-1, 1), 2, 1.2, 5, 0.18, 0.17, 0.16, 0.7, 0.8, 0);
+  }
+  function segDist(a, b, p) { const ab = _m4.elements; void ab; const vx = b.x - a.x, vy = b.y - a.y, vz = b.z - a.z, L = vx * vx + vy * vy + vz * vz || 1; const t = clamp(((p.x - a.x) * vx + (p.y - a.y) * vy + (p.z - a.z) * vz) / L, 0, 1); return Math.hypot(a.x + vx * t - p.x, a.y + vy * t - p.y, a.z + vz * t - p.z); }
+  function dfMarks() {
+    const box = $('dfMarks'); if (!box) return;
+    const show = mode === 'plane';
+    while (box.children.length < BANDITS.length) box.appendChild(document.createElement('div'));
+    [...box.children].forEach((el, i) => {
+      const B = BANDITS[i]; if (!show || !B || B.dead) { el.hidden = true; return; }
+      _tv.copy(B.pos); _tv.y += 3; _tv.project(camera); const behind = _tv.z > 1, dist = B.pos.distanceTo(P.pos);
+      let x = (_tv.x * 0.5 + 0.5) * innerWidth, y = (-_tv.y * 0.5 + 0.5) * innerHeight; if (behind) { x = innerWidth - x; y = innerHeight - 30; }
+      x = clamp(x, 20, innerWidth - 20); y = clamp(y, 20, innerHeight - 20);
+      el.hidden = false; el.style.transform = `translate(${x}px,${y}px) translate(-50%,-50%)`; el.className = B.hostile ? 'h' : '';
+      el.textContent = (B.kind === 'police' ? '◆ POLICE ' : B.hostile ? '◆ ' : '◇ ') + Math.round(dist) + 'm';
+    });
+  }
   return { active: () => mode, step, update, camera: cameraStep, grabKeys, interact, hud, hint, minimap, preferWorld, openWorldMap, pose: pose3, onPassOut, openSports, openHangar,
-    startSky, nearestStrip, landSpot, shoreNear, AU, P, SK, PLANES, RWYS, COURSES, TARGETS, board, bail, setPlane, parkAt, startCourse, getCourse: () => course, crash, onRunway, R0, setWp, hideMe: () => !!mode && mode !== 'sky', AK_PARK: PARK };
+    startSky, nearestStrip, landSpot, shoreNear, AU, P, SK, PLANES, RWYS, COURSES, TARGETS, board, bail, setPlane, parkAt, startCourse, getCourse: () => course, crash, onRunway, R0, setWp, hideMe: () => !!mode && mode !== 'sky', AK_PARK: PARK, BANDITS, spawnBandit };
 })();
 
 // ---------- V7: more extreme sports. Wingsuit (Isla Fuego), dirt bikes (Dune Island), kitesurfing (Coral Atoll), snowboarding (Frost Peak) ----------
