@@ -104,6 +104,7 @@ body.titling > *:not(#cv):not(#title):not(#modal):not(#fade):not(#surfWrap):not(
 #replayBar .lb{position:fixed;left:0;right:0;height:11vh;background:#000;z-index:60;display:flex;align-items:center;justify-content:center;color:#fff;font-family:'Silkscreen';font-size:16px;letter-spacing:1px}
 #replayBar .top{top:0}#replayBar .bot{bottom:0;font-size:11px;color:#aaa}
 body.replaying > *:not(#cv):not(#replayBar):not(script):not(style){visibility:hidden}
+#hitTxt{position:fixed;left:50%;top:30%;transform:translate(-50%,-50%);font-family:'Silkscreen';font-size:30px;color:#fff;text-shadow:3px 3px 0 #000,0 0 12px #ff4a2a;pointer-events:none;z-index:7}#hitTxt.pop{animation:hpop .9s ease-out forwards}@keyframes hpop{0%{transform:translate(-50%,-50%) scale(1.8);opacity:0}15%{transform:translate(-50%,-50%) scale(1);opacity:1}70%{opacity:1}100%{transform:translate(-50%,-80%);opacity:0}}
 #rideHud{position:fixed;left:50%;top:70px;transform:translateX(-50%);text-align:center;pointer-events:none;text-shadow:2px 2px 0 #000;font-family:'Silkscreen'}
 #rideScore{font-size:34px;color:#fff}#rideMult{font-size:15px;color:var(--yel)}#rideTricks div{font-size:18px;color:#7dff8a;animation:trk 1.6s forwards}#rideTricks div.bad{color:#ff6a50}#rideTricks div.big{font-size:26px;color:#ffd84a}
 @keyframes trk{0%{opacity:0;transform:scale(1.6)}12%{opacity:1;transform:scale(1)}75%{opacity:1}100%{opacity:0;transform:translateY(-14px)}}
@@ -182,7 +183,7 @@ body.touch #mobBtns{display:flex}
 <div id="objMark" hidden><b>▼</b><small></small></div>
 <div id="surfHint" hidden></div>
 <div id="duelHud" hidden></div><div id="replayBar" hidden><div class="lb top"><span id="replayTxt">REPLAY</span></div><div class="lb bot"><span>P / Esc / Space to skip</span></div></div>
-<div id="rideHud" hidden><div id="rideScore">0</div><div id="rideMult"></div><div id="rideTricks"></div></div>
+<div id="hitTxt" hidden></div><div id="rideHud" hidden><div id="rideScore">0</div><div id="rideMult"></div><div id="rideTricks"></div></div>
 <div id="chat" class="panel" aria-live="polite"></div>
 <div id="side" class="panel">
   <div id="tabs"><button data-t="inv" class="on">Bag</button><button data-t="skills">Skills</button><button data-t="craft">Craft</button><button data-t="gear">Gear</button><button data-t="goals">Goals</button></div>
@@ -1830,9 +1831,11 @@ const SPOTS = [
   { id: 'batts', name: 'Batts Rock', ll: [13.124, -59.632], tier: 2, req: { surf: 3 }, cfg: { size: 0.95, barrels: true, pitch: true, rocks: true, sharks: false }, blurb: 'Reef in the face. Carve round the rocks or air them.', rival: ['Dread', 5000], prize: 'log' },
   { id: 'southpoint', name: 'South Point', ll: [13.042, -59.524], tier: 2, req: { surf: 5 }, cfg: { size: 1.05, barrels: true, pitch: true, rocks: true, sharks: false }, blurb: 'A fast left over the reef by the lighthouse.', rival: ['Shonda', 6500], prize: 'step' },
   { id: 'soupbowl', name: 'Soup Bowl', ll: [13.213, -59.518], tier: 3, req: { car: true, orSurf: 10 }, cfg: { size: 1.2, barrels: true, pitch: true, rocks: true, sharks: false, bigSets: true }, blurb: 'A world-class right. Heavy, hollow, east-coast power.', rival: ['Nadia', 9000], prize: 'custom' },
-  { id: 'duppies', name: 'Duppies', ll: [13.3, -59.643], tier: 4, req: { x4: true }, cfg: { size: 1.3, barrels: true, pitch: true, rocks: true, sharks: true, bigSets: true }, blurb: 'Remote, sharky and only reachable down a mud track. Locals only.', rival: ['Old Man Lyle', 12000], prize: 'gun' }
+  { id: 'duppies', name: 'Duppies', ll: [13.3, -59.643], tier: 4, req: { x4: true }, cfg: { size: 1.3, barrels: true, pitch: true, rocks: true, sharks: true, bigSets: true }, blurb: 'Remote, sharky and only reachable down a mud track. Locals only.', rival: ['Old Man Lyle', 12000], prize: 'gun' },
+  { id: 'outer', name: 'The Outer Reef', ll: [13.05, -59.538], far: ['freights', 210], tier: 3, cfg: { size: 1.25, barrels: true, pitch: true, rocks: true, sharks: true, bigSets: true }, blurb: 'A big right-hander on a reef way out past Freights. Too far to paddle: take a jet ski.', rival: ['Tank', 10000], prize: 'gun' },
+  { id: 'bommie', name: 'Bathsheba Bommie', ll: [13.213, -59.518], far: ['soupbowl', 250], tier: 4, cfg: { size: 1.4, barrels: true, pitch: true, rocks: true, sharks: true, bigSets: true }, blurb: 'A lump of reef way out off the east coast. The biggest waves on the island. Jet ski only.', rival: ['Big Wave Benji', 13000], prize: 'gun' }
 ];
-SPOTS.forEach(s => { s.beach = inland(LL(...s.ll), 4); s.n = outward(...s.beach); });
+SPOTS.forEach(s => { if (s.far) { const b = SPOTS.find(q => q.id === s.far[0]); s.n = b.n; s.beach = [b.beach[0] + b.n[0] * s.far[1], b.beach[1] + b.n[1] * s.far[1]]; s.shore = b; } else { s.beach = inland(LL(...s.ll), 4); s.n = outward(...s.beach); } });
 const SP = Object.fromEntries(SPOTS.map(s => [s.id, s]));
 const WU = 90, WV = 64, NU = 80, NV = 60, WV0 = 7;   // the surf patch at each spot: width along the beach, depth out to sea, grid
 
@@ -2677,12 +2680,13 @@ SHOPS.forEach(s => {
   label(s.name, 'lab', () => _v.set(s.x, groundH(s.x, s.z) + 3.6, s.z), 90);
 });
 SPOTS.forEach(s => {
-  const [bx, bz] = s.beach, sx = bx - s.n[1] * 5, sz = bz + s.n[0] * 5;
+  const [bx, bz] = s.beach, sh = s.far ? s.shore.beach : null, sx = sh ? sh[0] + s.n[1] * 7 : bx - s.n[1] * 5, sz = sh ? sh[1] - s.n[0] * 7 : bz + s.n[0] * 5;
   const n = { kind: 'rival', spot: s, name: s.rival[0], x: sx, z: sz, mesh: makeGuy({ look: KIT.randomLook({ frame: frameOf(s.rival[0]), wear: pick(['trunks', 'vest', 'spring']), board: BT[s.prize].ride, boardC: BT[s.prize].bc }) }) };
   n.mesh.position.set(sx, groundH(sx, sz), sz); n.mesh.rotation.y = Math.atan2(s.n[0], s.n[1]); scene.add(n.mesh); NPCS.push(n);
   s.lab = label(spotOpen(s) || G.seen[s.id] ? s.name : '???', spotOpen(s) ? 'lab spot' : 'lab lock', () => _v.set(bx, groundH(bx, bz) + 4.2, bz), 140);
   label(s.rival[0], 'lab', () => _v.set(n.mesh.position.x, n.mesh.position.y + 2.5, n.mesh.position.z), 30);
   makeSurf(s);
+  if (s.far) { const buoy = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.7, 1.6, 10), M('#ff6a1a')); buoy.position.set(bx, 0.4, bz); scene.add(buoy); s.buoy = buoy; return; }
   const post = new THREE.Mesh(new THREE.BoxGeometry(0.15, 2.6, 0.15), M('#5a3a1e')); post.position.set(bx, groundH(bx, bz) + 1.3, bz); scene.add(post);
   const sign = new THREE.Mesh(new THREE.BoxGeometry(0.1, 1.8, 0.55), M(spotColour(s))); sign.position.set(bx, groundH(bx, bz) + 2.4, bz); scene.add(sign);
 });
@@ -2698,6 +2702,7 @@ const CROWD = [];
   const coolG = new THREE.BoxGeometry(0.6, 0.4, 0.4);
   let seed = 7; const r = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
   SPOTS.forEach((sp, si) => {
+    if (sp.far) return;   // no sand out on the reef
     const t = [-sp.n[1], sp.n[0]], [bx, bz] = sp.beach, used = [[bx, bz], [bx - sp.n[1] * 5, bz + sp.n[0] * 5]];
     // a spot on the sand: along the beach from the sign, a few metres up from the water, off the road, not on top of anything
     const place = (minD, maxD) => {
@@ -3385,6 +3390,8 @@ const SND = (() => {
     step(kind) { if (kind === 'sand') burst('lowpass', 650, 0.7, 0.11, 0.35); else if (kind === 'road') burst('bandpass', 1900, 1.2, 0.05, 0.3); else if (kind === 'water') burst('bandpass', 900, 0.8, 0.22, 0.35); else burst('bandpass', 1300, 0.9, 0.07, 0.22); },
     stroke() { burst('bandpass', 750 + Math.random() * 300, 0.9, 0.3, 0.28); },
     pop() { burst('bandpass', 600, 0.7, 0.35, 0.5); tone(300, 520, 0.18, 0.08, 'triangle'); },
+    punch(heavy) { if (!ac || !on) return; burst('lowpass', heavy ? 420 : 700, 0.8, heavy ? 0.22 : 0.12, heavy ? 0.9 : 0.6); tone(heavy ? 90 : 140, heavy ? 50 : 80, heavy ? 0.16 : 0.09, heavy ? 0.35 : 0.22, 'sine'); },
+    whiff() { if (!ac || !on) return; burst('bandpass', 1400, 1.2, 0.14, 0.18); },
     land() { burst('lowpass', 900, 0.6, 0.4, 0.7); },
     wipe() { burst('lowpass', 500, 0.5, 1.4, 0.9, brown); burst('bandpass', 800, 0.5, 0.9, 0.5); },
     coin() { tone(880, 880, 0.09, 0.12, 'square'); tone(1320, 1320, 0.16, 0.12, 'square', 0.08); },
@@ -3401,7 +3408,7 @@ const SND = (() => {
 })();
 // one local surfer sitting out the back at each spot, rising and falling with the sets
 const LINEUP = [];
-function spotColour(s) { return ['#45c4b0', '#45c4b0', '#f2c14e', '#f2c14e', '#e76f51', '#9b2226'][SPOTS.indexOf(s)]; }
+function spotColour(s) { return ['#45c4b0', '#45c4b0', '#f2c14e', '#f2c14e', '#e76f51', '#9b2226', '#e76f51', '#9b2226'][SPOTS.indexOf(s)]; }
 SPOTS.forEach(s => {
   for (let k = 0; k < 3; k++) {
     const u0 = (-24 + [0, -9, 8][k] + rr(-3, 3)) * s.surf.peel, v0 = VOFF + 3 + rr(-1.5, 3);   // sat round the peak, where the wave starts to peel
@@ -4166,7 +4173,9 @@ const HELP = [
     <li>The waves break out on the reef, a real paddle from the beach. Watch the next swell line roll in from out the back.</li>
     <li>Hold <kbd>Shift</kbd> to paddle hard. When whitewater rolls at you, press <kbd>Space</kbd> to duck dive under it (a longboard can only turtle roll, so it gets pushed back more).</li>
     <li>Longboards and foamies paddle fastest, shortboards slowest. Stop paddling and you sit up on your board.</li>
-    <li>Sit at the peak. When the wave stands up behind you and it says <b>GO</b>, press <kbd>Space</kbd>.</li>
+    <li>Sit at the peak. When the wave stands up behind you it says <b>PADDLE!</b>: turn to face the beach and hold <kbd>W</kbd> (and <kbd>Shift</kbd>) until it picks you up. Not enough speed and it rolls under you.</li>
+    <li>No more skipping out to the waves from the beach: you paddle out every time. Out at the peak, <kbd>E</kbd> still opens a full session (contests).</li>
+    <li><b>Outer reefs:</b> <b>The Outer Reef</b> (off Freights) and <b>Bathsheba Bommie</b> (off Soup Bowl) break way out past a rip current, with the biggest waves. Ride a <b>jet ski</b> out (South Coast Boat Yard), then <kbd>E</kbd> to jump in at the break.</li>
     <li>On the wave: <kbd>A</kbd><kbd>D</kbd> carve, <kbd>W</kbd> pump for speed, <kbd>S</kbd> stall for a barrel, <kbd>Space</kbd> at the top for an air (spin with <kbd>A</kbd><kbd>D</kbd>).</li>
     <li><kbd>P</kbd> replays your last ride.</li></ol>`],
   ['house', 'Build your own house', `<ol>
@@ -4180,6 +4189,7 @@ const HELP = [
   ['car', 'Cars', `<ul>
     <li>You start on the beach at Freights Bay next to your <b>Ember GT</b>. Hold <kbd>Space</kbd> while steering to drift (any car). Press <kbd>E</kbd> inside to sleep in it (any time). Crashes dent it, then it smokes, then black smoke, then the engine dies: Moke Motors fixes and tows. Moke Motors also buys cars for half price and sells the cheap Rust Bucket.</li>
     <li><b>Points ★</b> come from every surf ride and every drift (crash mid-drift and you lose it). At 20,000 points Moke Motors gives you the <b>Bush Runner</b> off-roader for free. The Ember GT from Helio Drift is on sale there too.</li>
+    <li><b>Fighting, GTA style:</b> <kbd>F</kbd> or click hits whoever's in front of you, and you lunge in to close the gap. Three quick hits is a combo: the third is a haymaker that floors people. Hit while running for a flying kick. <kbd>Tab</kbd> locks on to someone. Hit someone who's down to put the boot in. Anyone can be hit, beach-goers included: some fight back, some run.</li>
     <li>Fighting: make a <b>wooden club</b> (2 logs) or a <b>spiked club</b> (2 logs, 3 stone) with <kbd>C</kbd>. Hit locals and most will fight back; some run. Knock one down and they may drop cash, but word gets around and thieves come for you that night.</li>
     <li>Moke Motors in Bridgetown (the yellow CARS sign) sells five: Mini Moke $325, Beach buggy $900, Hatchback $1600, Pickup 4x4 $2800, Rally 4x4 $5000.</li>
     <li><kbd>E</kbd> to get in or out, <kbd>W</kbd><kbd>S</kbd> drive, <kbd>A</kbd><kbd>D</kbd> steer, <kbd>L</kbd> lock it.</li>
@@ -4542,7 +4552,7 @@ function interactables() {
   if (me.paddling) {
     const sa = spotAt(me.x, me.z);
     if (sa && !spotOpen(sa.s)) out.push({ d: 0, text: sa.s.name + ' is locked: needs ' + reqText(sa.s), go: () => chat('Locked: you need ' + reqText(sa.s) + '.', 'r') });
-    else if (sa && me.catchS !== 'go') out.push({ d: 0, text: 'Full session at ' + sa.s.name + ' (the surf game, contests)', go: () => goSurf(sa.s) });
+    else if (sa && ['wait', 'coming'].includes(me.catchS)) out.push({ d: 0, text: 'Full session at ' + sa.s.name + ' (the surf game, contests)', go: () => goSurf(sa.s) });
     return out;
   }
   if (G.inCar) { out.push({ d: 0.4, text: G.car.locked ? 'Unlock the doors (L)' : 'Lock the doors (L)', go: () => setLock(!G.car.locked) }); out.push({ d: 0.6, text: 'Sleep in the car' + (G.car.locked ? '' : ' (locks the doors)'), go: () => { G.car.locked = true; sleep('car'); } }); }
@@ -4556,7 +4566,7 @@ function interactables() {
   }
   for (const s of SPOTS) {
     const d = Math.hypot(s.beach[0] - me.x, s.beach[1] - me.z); if (d > 7) continue;
-    out.push({ d: d + 1, text: spotOpen(s) ? 'Full session at ' + s.name + ' (or walk into the sea and paddle out)' : s.name + ' is locked: needs ' + reqText(s), go: () => spotOpen(s) ? goSurf(s) : chat('Locked: you need ' + reqText(s) + '.', 'r') });
+    out.push({ d: d + 1, text: spotOpen(s) ? s.name + ': walk into the sea and paddle out to the peak' : s.name + ' is locked: needs ' + reqText(s), go: () => spotOpen(s) ? chat('Walk into the water and paddle out (W, Shift to paddle hard). Duck dive the whitewater with Space. Out at the peak, turn to the beach and paddle as a wave lifts you.', 'c') : chat('Locked: you need ' + reqText(s) + '.', 'r') });
   }
   for (const c of CAMPS) {
     const d = Math.hypot(c.x - me.x, c.z - me.z); if (d > 5.2) continue;
@@ -4988,6 +4998,7 @@ function update(dt) {
     updateRide(dt, ix, iz);
   } else if (!buildOn || true) {
     // ---- on foot ----
+    if (me.dash) { const st = Math.min(me.dash.left, 24 * dt); moveBody(me, Math.sin(me.dash.a) * st, Math.cos(me.dash.a) * st, 0.4, 'me'); me.dash.left -= st; me.dash.t -= dt; if (me.dash.left <= 0 || me.dash.t <= 0) me.dash = null; }
     if (il > 0.05 && act) act = null;
     me.hammer = false;
     if (autoBuild(dt, il > 0.05)) { me.mesh.userData.autoT = (me.mesh.userData.autoT || 0) + dt; }
@@ -5031,8 +5042,19 @@ function update(dt) {
         if (me.duckCd > 0) {} else if (G.stam < 4) chat('Too tired to duck dive.', 'o');
         else { me.duck = 1.1; me.duckCd = 1.5; G.stam -= 4; SND.stroke(); spray(me.x, 0.3, me.z, 6, 0.9); } }
       me.catchS = cs ? cs.st : null;
-      if (cs && cs.st === 'go' && (pressed.has(' ') || pressed.has('e'))) { pressed.delete('e'); startRide(sp_, cs); }
-      else if (pressed.has(' ') && cs && cs.st !== 'go') chat(cs.st === 'coming' ? 'Not yet. Let it come to you.' : 'No wave right here yet. Sit at the peak and wait for the next one.', 'o');
+      // True Surf style: as the wave stands up, face the beach and dig in. Enough paddle speed and it picks you up
+      const shoreward = Math.sin(me.yaw) * -sp_?.n[0] + Math.cos(me.yaw) * -sp_?.n[1];
+      if (cs && cs.st === 'go') {
+        if (me.padIn && shoreward > 0.45) me.catchP = (me.catchP || 0) + dt * (hard ? 1.7 : 1) * (0.5 + shoreward * 0.5);
+        else me.catchP = Math.max(0, (me.catchP || 0) - dt * 0.8);
+        if (me.catchP >= 0.75 || ((pressed.has(' ') || pressed.has('e')) && me.catchP > 0.3)) { pressed.delete('e'); me.catchP = 0; startRide(sp_, cs); }
+        else if (pressed.has(' ') || pressed.has('e')) { pressed.delete('e'); chat(shoreward < 0.45 ? 'Turn to face the beach and paddle (W) to catch it!' : 'Paddle harder (hold W, Shift)! You need speed to catch it.', 'o'); }
+      } else { me.catchP = Math.max(0, (me.catchP || 0) - dt * 2);
+        if (pressed.has(' ') && cs && !me.inWash) chat(cs.st === 'coming' ? 'Not yet. Let it come to you, then turn and paddle.' : 'No wave right here yet. Sit at the peak and wait for the next one.', 'o'); }
+      // the outer reefs are out past a rip: paddle too far from shore and it drags you back. Take a jet ski
+      const offshore = !sa && (sdAt(me.x, me.z) < -95 || Math.abs(me.x) > 262 || Math.abs(me.z) > 292);
+      if (offshore) { const g = Math.hypot(me.x, me.z) || 1; moveBody(me, -me.x / g * 2.7 * dt, -me.z / g * 2.7 * dt, 0.4, 'me'); G.stam = Math.max(0, G.stam - 2 * dt);
+        if (tick - (me.ripMsg || -99) > 14) { me.ripMsg = tick; chat('A rip current drags you back toward the island. The outer reefs are too far to paddle: ride a jet ski out (South Coast Boat Yard), then E to jump in at the break.', 'o'); } }
     } else me.catchS = null;
     const aIn = Math.atan2(ix, iz) + cam.yaw, yaw0 = me.yaw;
     if (il > 0.05) me.yaw += wrapA(aIn - me.yaw) * Math.min(1, dt * (me.paddling ? 3.5 : me.run ? 10 : 14));
@@ -5486,7 +5508,7 @@ function update(dt) {
     SND.tick(dt, sea, Number.isFinite(crash) ? clamp(crash, 0, 1) : 0, ride ? clamp(ride.sp / 18, 0, 1) : 0, G.time >= NIGHT_AT, clamp(sd / 80, 0, 1)); }
   // the surf hint while you're out the back
   { const st = ride ? null : me.catchS, h = $('surfHint');
-    const txt = st === 'go' ? 'GO! SPACE' : st === 'coming' ? 'Wave coming… get ready' : st === 'wait' ? 'Waiting for a wave…' : st === 'inside' ? 'Paddle out past the breaking wave' : st === 'deep' ? 'Too far out: paddle in toward the peak' : st === 'side' ? 'Paddle over toward the peak' : '';
+    const txt = st === 'go' ? 'PADDLE! Face the beach, hold W ' + '▮'.repeat(Math.min(5, Math.round((me.catchP || 0) / 0.15))) : st === 'coming' ? 'Wave coming… turn to the beach' : st === 'wait' ? 'Waiting for a wave…' : st === 'inside' ? 'Paddle out past the breaking wave' : st === 'deep' ? 'Too far out: paddle in toward the peak' : st === 'side' ? 'Paddle over toward the peak' : '';
     h.hidden = !txt; if (txt && h.textContent !== txt) { h.textContent = txt; h.className = st === 'go' ? 'go' : st === 'coming' ? 'come' : ''; if (st === 'go') SND.cheer(0.3); } }
   // save now and then
   saveT += dt; if (saveT > 8) { saveT = 0; save(); }
@@ -5532,6 +5554,7 @@ function pickTarget(manual) {
   if (manual && !best) {
     const fwd = (o, w) => { const p = tgtPos(o); const a = Math.atan2(p.x - fx, p.z - fz); if (Math.abs(wrapA(a - (G.inCar ? car.mesh.rotation.y : me.yaw))) < 0.9) consider(o, w); };
     RAIDERS.forEach(o => fwd(o, 1)); CAMPS.forEach(c => fwd(c, 1.2)); BOARS.forEach(b => { if (!b.dead) fwd(b, 1.3); }); LINEUP.forEach(l => { if (l.gone <= 0) fwd(l, 1.5); });
+    if (!G.inCar && !me.paddling) NPCS.forEach(n => { if (Math.hypot(n.mesh.position.x - me.x, n.mesh.position.z - me.z) < 12) fwd(n, 1.4); });
     if (landlord) fwd(landlord, 1);
     if (carThief) fwd(carThief, 1);
     if (keyThief) fwd(keyThief, 1);
@@ -5606,7 +5629,7 @@ function updateRocks(dt) {
   }
 }
 // auto-arm when thieves show up and you have rocks
-const WEAPONS = [['fists', 'Fists', '✊', 1.6, 0.5], ['club', 'Wooden club', '🏏', 2.0, 1.3], ['spiked', 'Spiked club', '⚒️', 2.1, 2.6], ['board', 'Surfboard', '🏄', 2.4, 1], ['axe', 'Stone axe', '🪓', 2.1, 1.5], ['spear', 'Stone spear', '🗡️', 2.9, 2], ['rocks', 'Rocks', '🪨', 0, 0]];
+const WEAPONS = [['fists', 'Fists', '✊', 1.7, 1.0], ['club', 'Wooden club', '🏏', 2.0, 1.3], ['spiked', 'Spiked club', '⚒️', 2.1, 2.6], ['board', 'Surfboard', '🏄', 2.4, 1], ['axe', 'Stone axe', '🪓', 2.1, 1.5], ['spear', 'Stone spear', '🗡️', 2.9, 2], ['rocks', 'Rocks', '🪨', 0, 0]];
 const canHold = w => w === 'fists' || (w === 'board' ? !!G.boards[G.active] && !G.boardHome : w === 'rocks' ? has('stone') : has(w));
 function setWeapon(w, quiet) {
   G.weapon = w; G.armed = w === 'rocks'; curTarget = null;
@@ -5620,30 +5643,60 @@ function cycleWeapon() {
   setWeapon(order[(i + 1) % order.length]);
 }
 // swing whatever's in your hand at whoever's in front of you
+const BEACH_NAMES = ['Sunny', 'Dexter', 'Marisol', 'Tyrone', 'Kiki', 'Andre', 'Rochelle', 'Big Paul', 'Shanice', 'Clive'];
+function crowdToLocal(c) {   // someone on the sand gets hit: they become a proper local who fights back or runs
+  CROWD.splice(CROWD.indexOf(c), 1);
+  const m = c.m; m.rotation.x = 0; m.userData.hide = false; m.position.y = groundH(m.position.x, m.position.z);
+  const n = { kind: 'beach', name: pick(BEACH_NAMES), x: m.position.x, z: m.position.z, hx: m.position.x, hz: m.position.z, mesh: m };
+  NPCS.push(n); return n;
+}
+let hitStop = 0, camShake = 0;
 function melee() {
-  const W = WEAPONS.find(x => x[0] === (G.weapon || 'fists')), reach = W[3], dmg = W[4] + (W[0] === 'fists' ? 0 : L_('fit') * 0.02);
-  const u = me.mesh.userData; if (u.swingCd > 0) return; u.swingCd = W[0] === 'fists' ? 0.35 : 0.6;
-  const type = W[0] === 'fists' ? 'punch' : W[0] === 'spear' ? 'thrust' : 'swing';
-  u.side = -(u.side || 1); u.atk = { type, t: 0, dur: type === 'punch' ? 0.34 : type === 'thrust' ? 0.42 : 0.62, imp: type === 'punch' ? 0.33 : type === 'thrust' ? 0.38 : 0.55, side: u.side };
-  G.stam = Math.max(0, G.stam - (W[0] === 'board' ? 6 : 3));
-  const hits = [];
-  const consider = (o, x, z) => { const d = Math.hypot(x - me.x, z - me.z); if (d > reach) return; const a = Math.atan2(x - me.x, z - me.z); if (Math.abs(wrapA(a - me.yaw)) > 1.2 && d > 1) return; hits.push([d, o, a]); };
+  const W = WEAPONS.find(x => x[0] === (G.weapon || 'fists')), reach = W[3];
+  const u = me.mesh.userData; if (u.swingCd > 0) return;
+  u.combo = tick - (u.lastSwing || -9) < 0.9 ? (u.combo || 0) + 1 : 0; u.lastSwing = tick;
+  const charge = me.run && (me.vel || 0) > 4, heavy = charge || u.combo % 3 === 2, fists = W[0] === 'fists';
+  const dmg = (W[4] + (fists ? 0 : L_('fit') * 0.02)) * (heavy ? 1.8 : 1) * (charge ? 1.2 : 1);
+  u.swingCd = (fists ? 0.26 : 0.5) + (heavy ? 0.22 : 0);
+  const type = fists ? (heavy ? 'swing' : 'punch') : W[0] === 'spear' ? 'thrust' : 'swing';
+  u.side = -(u.side || 1); u.atk = { type, t: 0, dur: type === 'punch' ? 0.3 : type === 'thrust' ? 0.42 : fists ? 0.45 : 0.62, imp: type === 'punch' ? 0.3 : type === 'thrust' ? 0.38 : fists ? 0.45 : 0.55, side: u.side };
+  G.stam = Math.max(0, G.stam - (W[0] === 'board' ? 6 : heavy ? 5 : 3));
+  // who: the locked target (Tab) if they're close, else whoever's most in front of you within a lunge
+  const range = reach + (charge ? 3.6 : 2.6), hits = [];
+  const consider = (o, x, z) => { const d = Math.hypot(x - me.x, z - me.z); if (d > range) return; const a = Math.atan2(x - me.x, z - me.z), off = Math.abs(wrapA(a - me.yaw)); if (off > 1.7 && d > 1.2) return; hits.push([d + off * 1.6 - (o === curTarget ? 3 : 0), o, a, d]); };
   RAIDERS.forEach(o => consider(o, o.x, o.z)); CAMPS.forEach(c => consider(c, c.mesh.position.x, c.mesh.position.z)); BOARS.forEach(b => { if (!b.dead) consider(b, b.x, b.z); });
   if (landlord) consider(landlord, landlord.x, landlord.z);
   if (carThief) consider(carThief, carThief.x, carThief.z);
+  if (keyThief) consider(keyThief, keyThief.x, keyThief.z);
   NPCS.forEach(n => consider(n, n.mesh.position.x, n.mesh.position.z));
-  if (!hits.length) { if (tick - (G.swingMsgT || -99) > 30) { G.swingMsgT = tick; chat('You swing at the air. Get close to someone, then hit F.', 'o'); } return; }
-  hits.sort((a, b) => a[0] - b[0]);
-  const [, o, a] = hits[0]; me.yaw = a;
-  u.atk.onHit = () => landHit(W, o, a, dmg);
+  CROWD.forEach(c => { if (!c.m.userData.hide) consider({ crowd: c }, c.m.position.x, c.m.position.z); });
+  if (!hits.length) { SND.whiff(); if (tick - (G.swingMsgT || -99) > 60) { G.swingMsgT = tick; chat('You swing at the air. Face someone and hit F (or click). Three quick hits = a knockout combo, and a running hit is a flying kick.', 'o'); } return; }
+  hits.sort((p, q) => p[0] - q[0]);
+  let [, o, a, d] = hits[0];
+  if (o.crowd) o = crowdToLocal(o.crowd);
+  me.yaw = a;
+  if (d > reach * 0.85) me.dash = { a, left: Math.min(d - reach * 0.75, range), t: 0.22 };   // close the gap like GTA
+  if (charge) { u.atk.kick = true; trickFx('FLYING KICK'); }
+  u.atk.onHit = () => {
+    const p = o.mesh ? o.mesh.position : o, dd = Math.hypot(p.x - me.x, p.z - me.z);
+    if (dd > reach + 1.3) { SND.whiff(); return; }
+    landHit(W, o, Math.atan2(p.x - me.x, p.z - me.z), dmg, heavy);
+  };
 }
-function landHit(W, o, a, dmg) {
+function trickFx(t) { const h = $('hitTxt'); if (!h) return; h.textContent = t; h.hidden = false; h.classList.remove('pop'); void h.offsetWidth; h.classList.add('pop'); clearTimeout(h._t); h._t = setTimeout(() => { h.hidden = true; }, 900); }
+function hitFeel(heavy, x, y, z) {
+  hitStop = heavy ? 0.09 : 0.045; camShake = Math.max(camShake, heavy ? 0.35 : 0.14); SND.punch(heavy);
+  puff(x, y + 1.3, z, heavy ? '#ffffff' : '#f0e6d0', heavy ? 6 : 3);
+}
+function landHit(W, o, a, dmg, heavy) {
   o.mesh.userData.hurtT = 0.35;
-  if (NPCS.includes(o)) hitLocal(o, W, a, dmg);   // an innocent: they fight back or run, and they won't forget it
+  hitFeel(heavy, o.mesh.position.x, o.mesh.position.y, o.mesh.position.z);
+  if (NPCS.includes(o)) hitLocal(o, W, a, dmg, heavy);   // an innocent: they fight back or run, and they won't forget it
   else {
     if (W[0] === 'spear' && BOARS.includes(o)) { o.hp -= 2 + Math.floor(L_('hunt') / 8) - 1.5 * dmg; addXP('hunt', 8); }
     rockHits(o, dmg, W[0]);
-    const kb = W[0] === 'fists' ? 0.8 : 1.6, b = { x: o.mesh.position.x, z: o.mesh.position.z };
+    const kb = (W[0] === 'fists' ? 0.8 : 1.6) * (heavy ? 2.2 : 1), b = { x: o.mesh.position.x, z: o.mesh.position.z };
+    if (heavy && RAIDERS.includes(o) && !(o.mesh.userData.downT > 0)) { knockDown(o, 2.2); trickFx('KNOCKDOWN'); }
     moveBody(b, Math.sin(a) * kb, Math.cos(a) * kb, 0.4, 'raider');
     if ('x' in o && o !== landlord && !CAMPS.includes(o)) { o.x = b.x; o.z = b.z; } else if (o === landlord) { o.x = b.x; o.z = b.z; } else { o.mesh.position.x = b.x; o.mesh.position.z = b.z; }
   }
@@ -5654,13 +5707,19 @@ function landHit(W, o, a, dmg) {
   }
 }
 // locals hit back: most square up and fight, the rest run. Knock one down and they might drop some cash
-function hitLocal(n, W, a, dmg) {
+function hitLocal(n, W, a, dmg, heavy) {
   const m = n.mesh, u = m.userData;
-  if (u.downT > 0) return;
+  if (u.downT > 0) {   // a kick while they're on the floor
+    n.kicked = (n.kicked || 0) + 1; u.downT = Math.min(u.downT + 0.8, 9); G.heat = (G.heat || 0) + 0.3;
+    say(n, pick(['Oof!', 'Stop!', 'Ow ow ow!']), 1.2);
+    if (n.kicked === 3) chat('Kicking someone while they\'re down. The whole beach saw that.', 'r');
+    return;
+  }
+  n.kicked = 0;
   if (n.hx == null) { n.hx = m.position.x; n.hz = m.position.z; }
-  if (n.hp == null) n.hp = n.kind === 'shop' ? 5 : 4;
-  n.hp -= dmg; n.stun = 0.45;
-  const kb = W[0] === 'fists' ? 0.7 : 1.4, b = { x: m.position.x, z: m.position.z };
+  if (n.hp == null) n.hp = n.kind === 'shop' ? 5 : n.kind === 'rival' ? 4.5 : 3.6;   // a clean three-hit combo drops most people
+  n.hp -= dmg; n.stun = heavy ? 0.9 : 0.45;
+  const kb = (W[0] === 'fists' ? 0.7 : 1.4) * (heavy ? 2.4 : 1), b = { x: m.position.x, z: m.position.z };
   moveBody(b, Math.sin(a) * kb, Math.cos(a) * kb, 0.4, 'raider');
   n.x += b.x - m.position.x; n.z += b.z - m.position.z; m.position.x = b.x; m.position.z = b.z;
   if (!n.wronged) { n.wronged = true; G.heat = (G.heat || 0) + 1; chat('You hit ' + (n.name || (n.shop ? 'the guy at ' + n.shop.name : 'a local')) + '. Word gets around: expect payback tonight.', 'r'); }
@@ -5671,7 +5730,8 @@ function hitLocal(n, W, a, dmg) {
     say(n, pick(['Ugh…', 'Okay, okay! I give up!', '…']), 2);
     if (Math.random() < 0.55) drop('coins', 4 + ((Math.random() * 12) | 0), m.position.x + 0.6, m.position.z);
     addXP('fit', 10); chat('You knock ' + (n.name || 'them') + ' flat.', 'o');
-  } else if (n.brave) { n.angry = 20; n.fear = 0; say(n, pick(['You want some?!', 'Come on then!', 'Big mistake!', 'Oh, it\'s ON!']), 2); }
+    trickFx('K.O.');
+  } else if (n.brave) { n.angry = 20; n.fear = 0; if (heavy) { knockDown(n, 1.3); trickFx('KNOCKDOWN'); } say(n, pick(['You want some?!', 'Come on then!', 'Big mistake!', 'Oh, it\'s ON!']), 2); }
   else { n.fear = 10; n.angry = 0; say(n, pick(['Help! Crazy person!', 'Leave me alone!', 'Somebody call the police!']), 2.5); }
 }
 function fightLocal(n, dt) {
@@ -5686,7 +5746,7 @@ function fightLocal(n, dt) {
     if (n.stun <= 0 && d < 1.7 && n.punchCd <= 0) {
       n.punchCd = rand(0.9, 1.5);
       punchAnim(m, () => { const a = Math.atan2(me.x - m.position.x, me.z - m.position.z); if (Math.hypot(me.x - m.position.x, me.z - m.position.z) < 2.1 && !G.inCar && !inside) {
-        hurt(n.kind === 'rival' ? 2 : 1, pick([(n.name || 'They') + ' clocks you. ', 'Right in the jaw. ', 'You eat a punch. ']) + '-' + (n.kind === 'rival' ? 2 : 1) + ' HP');
+        camShake = Math.max(camShake, 0.2); SND.punch(false); hurt(n.kind === 'rival' ? 2 : 1, pick([(n.name || 'They') + ' clocks you. ', 'Right in the jaw. ', 'You eat a punch. ']) + '-' + (n.kind === 'rival' ? 2 : 1) + ' HP');
         const b = { x: me.x, z: me.z }; moveBody(b, Math.sin(a) * 0.6, Math.cos(a) * 0.6, 0.4); me.x = b.x; me.z = b.z; } });
     }
   } else if (n.fear > 0) { n.fear -= dt; yaw = Math.atan2(-dx, -dz); sp = d < 25 ? 5.2 : 0; }
@@ -6013,7 +6073,9 @@ function frame() {
   else if ($('surfWrap').hidden && document.body.classList.contains('touch') && innerHeight > innerWidth && !title) { renderer.render(scene, camera); }
   else if ($('surfWrap').hidden) {
     if (title) { for (const k in keys) keys[k] = false; pressed.clear(); }
-    update(dt); if (title) updateTitle(dt);
+    let fdt = dt; if (hitStop > 0) { hitStop -= dt; fdt = dt * 0.1; }   // a punch that lands freezes the world for a beat
+    update(fdt); if (title) updateTitle(dt);
+    if (camShake > 0.01) { camera.position.x += (Math.random() - 0.5) * camShake; camera.position.y += (Math.random() - 0.5) * camShake; camShake *= Math.pow(0.02, dt); } else camShake = 0;
     renderer.render(scene, camera); if (inside) renderPeek(); else $('peek').hidden = true; hud();
   }
   requestAnimationFrame(frame);
