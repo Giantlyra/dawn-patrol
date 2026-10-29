@@ -2427,7 +2427,7 @@ const CARS = {
   rally: { name: 'Rally 4x4', price: 5000, col: '#f2f2f2', blurb: 'Built to race the cane fields. Fast anywhere', top: 40, off: 27, acc: 22, sand: true, x4: true, k: 70, c: 9, soft: 0.85, travel: 0.16, wr: 0.39, ww: 0.3, track: 1.78, wb: 2.6, seat: [0.42, 1.12, 0] },
   junker: { name: 'Rust Bucket', price: 300, col: '#8a5a3c', drift: true, blurb: 'Cheap old saloon. Dented, rusty, bouncy, somehow still runs', top: 24, off: 9, acc: 10, sand: false, x4: false, k: 34, c: 3.6, soft: 1.4, travel: 0.17, wr: 0.33, ww: 0.24, track: 1.6, wb: 2.5, seat: [0.4, 1.05, -0.1] },
   offroad: { name: 'Bush Runner', price: 3500, reward: 20000, col: '#56702f', blurb: 'Lifted off-roader. Sand, mud, cane fields: goes anywhere', top: 31, off: 28, acc: 18, sand: true, x4: true, k: 30, c: 4.8, soft: 1.3, travel: 0.3, wr: 0.55, ww: 0.42, track: 2.0, wb: 2.8, seat: [0.45, 1.55, -0.1] },
-  ember: { name: 'Ember GT', price: 2400, col: '#ff5a1f', glow: '#ff7a2a', drift: true, blurb: 'Your drift coupe from Helio Drift. Fast on tarmac, Space to slide it, hates sand', top: 38, off: 9, acc: 21, sand: false, x4: false, k: 90, c: 11, soft: 0.6, travel: 0.06, wr: 0.37, ww: 0.3, track: 1.74, wb: 2.84, seat: [0.42, 1.0, -0.2] }
+  ember: { name: 'Ember GT', price: 2400, col: '#ff5a1f', glow: '#ff7a2a', drift: true, blurb: 'Your drift coupe from Helio Drift. Fast on tarmac, Space to slide it, wallows on sand', top: 38, off: 15, acc: 21, sand: false, x4: false, k: 90, c: 11, soft: 0.6, travel: 0.06, wr: 0.37, ww: 0.3, track: 1.74, wb: 2.84, seat: [0.42, 1.0, -0.2] }
 };
 const carDef = () => CARS[G.car.model] || CARS.moke;
 const carName = () => carDef().name;
@@ -2614,6 +2614,8 @@ function swapCar(i) {
 }
 // everyone starts with the Ember GT from Helio Drift, parked by their plot. Keep it, sleep in it, or sell it at Moke Motors
 function crashCar(imp, dir) {
+  if (tick - (car.crashT || -9) < 1.5 && imp < 14) return;   // grinding against the same wall isn't a new crash every bounce
+  car.crashT = tick;
   const u = car.mesh.userData, was = G.car.dmg || 0;
   G.car.dmg = Math.min(100, was + clamp((imp - 4) * 1.7, 3, 32));
   G.car.dents = G.car.dents || [];
@@ -4480,16 +4482,19 @@ function steal(o, t) {
     const ks = Object.keys(G.stash).filter(k => G.stash[k] > 0), k = pick(ks), n = Math.min(G.stash[k], Math.ceil(G.stash[k] / 2), 6);
     G.stash[k] -= n; o.carry = [k, n]; chat('A thief got into your stash and grabbed ' + n + ' ' + ITEMS[k][1].toLowerCase() + '!', 'r');
   } else if (t.kind === 'car') {
-    if (G.car.locked) {   // try the handles, bang on the glass, give up
+    if (G.car.locked || G.inCar) {   // try the handles, bang on the glass, give up. Nobody gets you out while you're sitting in it
       o.triedCar = true; o.stun = 2.5; punchAnim(o.mesh);
       say(o, pick(['It\'s locked!', 'Open up!', 'Come on…', 'Smash the window? Nah.']), 2.5);
-      if (G.inCar) chat('A thief yanks at your door handle. Locked. You watch them give up.', 'g'); else if (Math.hypot(car.mesh.position.x - me.x, car.mesh.position.z - me.z) < 60) chat('Someone\'s trying the doors of your Moke. Good thing it\'s locked.', 'o');
+      if (G.inCar) chat('A thief yanks at your door handle. You lean on the horn and they give up.', 'g'); else if (Math.hypot(car.mesh.position.x - me.x, car.mesh.position.z - me.z) < 60) chat('Someone\'s trying the doors of your ' + carName() + '. Good thing it\'s locked.', 'o');
       return;
     }
     if (G.inCar) { G.inCar = false; me.x = car.mesh.position.x + Math.cos(car.mesh.rotation.y) * 2; me.z = car.mesh.position.z - Math.sin(car.mesh.rotation.y) * 2; hurt(2, 'Your door wasn\'t locked! A thief drags you out of the Moke. -2 HP'); }
     stealCar(o);
     scene.remove(o.mesh); if (o.sayL) { o.sayL.el.remove(); LBL.splice(LBL.indexOf(o.sayL), 1); } RAIDERS.splice(RAIDERS.indexOf(o), 1);
     return;
+  }
+  else if (t.kind === 'you' && G.inCar) {   // you're in the car: they can't reach your pockets
+    o.triedCar = true; o.stun = 2.5; punchAnim(o.mesh); say(o, pick(['Get out the car!', 'Forget it.', 'Come on…']), 2.5); o.st = 'flee'; return;
   }
   else if (t.kind === 'you') {
     const food = Object.keys(G.inv).filter(k => G.inv[k] > 0 && (FOOD[k] || k === 'wood' || k === 'stone'));
@@ -4541,7 +4546,7 @@ function interactables() {
     return out;
   }
   if (G.inCar) { out.push({ d: 0.4, text: G.car.locked ? 'Unlock the doors (L)' : 'Lock the doors (L)', go: () => setLock(!G.car.locked) }); out.push({ d: 0.6, text: 'Sleep in the car' + (G.car.locked ? '' : ' (locks the doors)'), go: () => { G.car.locked = true; sleep('car'); } }); }
-  if (G.inCar) { out.push({ d: 0, text: 'Get out of the car', go: () => { G.inCar = false; me.x = car.mesh.position.x + Math.cos(car.mesh.rotation.y) * 1.8; me.z = car.mesh.position.z - Math.sin(car.mesh.rotation.y) * 1.8; if (!G.car.locked) chat('Don\'t forget to lock it (L), or it might not be here when you get back.', 'o'); save(); } }); return out; }
+  if (G.inCar) { out.unshift({ d: 0, text: 'Get out of the car', go: () => { G.inCar = false; me.x = car.mesh.position.x + Math.cos(car.mesh.rotation.y) * 1.8; me.z = car.mesh.position.z - Math.sin(car.mesh.rotation.y) * 1.8; if (!G.car.locked) chat('Don\'t forget to lock it (L), or it might not be here when you get back.', 'o'); save(); } }); return out; }
   for (const n of NPCS) {
     const d = Math.hypot(n.mesh.position.x - me.x, n.mesh.position.z - me.z); if (d > 3.4) continue;
     if (n.kind === 'shop') out.push({ d, text: 'Talk: ' + n.shop.name, go: () => openShop(n.shop.id) });
@@ -4941,23 +4946,32 @@ function update(dt) {
     const sand = sdAt(car.mesh.position.x, car.mesh.position.z) < 8 && !onRoad;
     const CD = carDef(), sp0 = car.spd, y0 = car.mesh.rotation.y;
     let top = onRoad ? CD.top * (G.car.tune ? 1.3 : 1) : CD.off;
-    if (sand && !carSand()) top = 3;
+    if (sand && !carSand()) top = Math.max(7, CD.off * 0.6);   // street tyres on sand: slow and loose, but it goes
+    else if (sand) top = Math.max(top, CD.off * 1.1);
     if (mud && !carX4()) top = 1.2;
     const dead = (G.car.dmg || 0) >= 100;
     if (dead && thr && tick > (car.deadMsg || 0)) { car.deadMsg = tick + 5; chat('The engine just clicks. It\'s dead: get it towed and fixed at Moke Motors in Bridgetown.', 'r'); }
     if ((G.car.dmg || 0) >= 85) top *= 0.6;
-    car.spd += (dead ? 0 : thr * (thr * car.spd < 0 ? 26 : CD.acc)) * dt;
+    const loose = sand ? (carSand() ? 0.6 : 0.4) : onRoad ? 1 : 0.7;   // grip: tarmac 1, grass and dirt 0.7, sand less
+    car.spd += (dead ? 0 : thr * (thr * car.spd < 0 ? 26 : CD.acc * (sand && !carSand() ? 0.55 : 1))) * dt;
     if (!thr) car.spd -= Math.sign(car.spd) * Math.min(Math.abs(car.spd), 6 * dt);
     car.spd = Math.max(-6, car.spd); if (car.spd > top) car.spd = Math.max(top, car.spd - 20 * dt);
-    if ((mud && !carX4() || sand && !carSand()) && thr && tick > stuckMsg) { stuckMsg = tick + 4; chat(mud ? 'Stuck in the mud! You need a 4x4: a kit from Moke Motors, or a truck.' : 'The wheels dig into the sand. Beach tyres (or a buggy) would sort this.', 'r'); }
+    if ((mud && !carX4() || sand && !carSand() && !G.sandTold) && thr && tick > stuckMsg) { stuckMsg = tick + 4; if (sand) G.sandTold = true; chat(mud ? 'Stuck in the mud! You need a 4x4: a kit from Moke Motors, or a truck.' : 'Street tyres on sand: slow and slidey. Beach tyres from Moke Motors make it fly.', 'o'); }
     car.steer = lerp(car.steer, st, dt * 6);
-    const hb = keys[' '] && car.spd > 8;   // handbrake: the Ember GT kicks its tail out and slides
-    car.mesh.rotation.y += car.steer * clamp(car.spd / 8, -1, 1) * dt * (hb ? 2.9 : 1.7);
+    const hb = keys[' '] && car.spd > 6;   // handbrake: kick the tail out and slide
     if (car.vh == null || Math.abs(car.spd) < 1) car.vh = car.mesh.rotation.y;
-    car.vh += wrapA(car.mesh.rotation.y - car.vh) * Math.min(1, dt * (hb ? 1.6 : CD.drift && Math.abs(car.steer) > 0.6 && car.spd > 18 ? 4 : 10));
+    const sliding = Math.abs(car.slip || 0) > 0.18 && car.spd > 6;
+    // steering: sharper with the handbrake, and while sliding the wheel steers the slide (counter-steer catches it)
+    car.mesh.rotation.y += car.steer * clamp(car.spd / 8, -1, 1) * dt * (hb ? 2.7 : sliding ? 2.2 : 1.7);
+    // grip: how fast the car's travel swings round to where it points. Low = long slides
+    let grip = hb ? 1.4 : sliding && thr > 0 ? 2.4 : sliding ? 5 : CD.drift && Math.abs(car.steer) > 0.7 && car.spd > 16 && thr > 0 ? 4 : 10;
+    grip *= loose; if (!hb && !sliding) grip = Math.max(grip, 6);
+    car.vh += wrapA(car.mesh.rotation.y - car.vh) * Math.min(1, dt * grip);
     car.slip = wrapA(car.mesh.rotation.y - car.vh);
-    if (hb) car.spd -= 3 * dt;
-    if (Math.abs(car.slip) > 0.25 && car.spd > 8 && Math.random() < dt * 30) { const yw = car.mesh.rotation.y; puff(car.mesh.position.x - Math.sin(yw) * 1.6, car.mesh.position.y + 0.3, car.mesh.position.z - Math.cos(yw) * 1.6, '#d8d8d8', 2); }
+    if (Math.abs(car.slip) > 1.15) { car.vh = car.mesh.rotation.y - Math.sign(car.slip) * 1.15; car.slip = Math.sign(car.slip) * 1.15; }   // no full spin-outs
+    car.spd -= (Math.abs(Math.sin(car.slip)) * (thr > 0 ? 2.2 : 5) + (hb ? 1.5 : 0)) * dt;
+    if (Math.abs(car.slip) > 0.2 && car.spd > 6 && Math.random() < dt * (sand ? 45 : 30)) { const yw = car.mesh.rotation.y; for (const sd of [-1, 1]) puff(car.mesh.position.x - Math.sin(yw) * 1.6 + Math.cos(yw) * sd * 0.8, car.mesh.position.y + 0.3, car.mesh.position.z - Math.cos(yw) * 1.6 - Math.sin(yw) * sd * 0.8, sand ? '#e4cf9a' : onRoad ? '#d8d8d8' : '#9a8460', 2); }
+    else if (sand && car.spd > 5 && Math.random() < dt * 8) { const yw = car.mesh.rotation.y; puff(car.mesh.position.x - Math.sin(yw) * 1.7, car.mesh.position.y + 0.2, car.mesh.position.z - Math.cos(yw) * 1.7, '#e4cf9a', 1.4); }
     if (Math.abs(car.slip) > 0.22 && car.spd > 8) { car.dc = (car.dc || 0) + car.spd * Math.abs(car.slip) * dt * 14 * (car.dc > 400 ? 1.5 : 1); car.dq = 0; const h = $('driftHud'); h.hidden = false; h.textContent = 'DRIFT ' + Math.round(car.dc).toLocaleString(); }
     else if (car.dc) { car.dq = (car.dq || 0) + dt; if (car.dq > 0.7) { const p = car.dc; car.dc = 0; $('driftHud').hidden = true; if (p >= 40) addPts(p, 'Drift!'); } }
     if (hb && !G.driftTold) { G.driftTold = true; chat('Sideways! Hold Space and steer to drift, let go to grip up.', 'y'); }
