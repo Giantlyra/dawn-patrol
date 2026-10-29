@@ -2425,7 +2425,7 @@ const CARS = {
   hatch: { name: 'Island hatchback', price: 1600, col: '#3f78d8', blurb: 'Quick on the road, stiff and low. Hates sand', top: 33, off: 9, acc: 17, sand: false, x4: false, k: 95, c: 12, soft: 0.6, travel: 0.06, wr: 0.33, ww: 0.26, track: 1.6, wb: 2.4, seat: [0.4, 1.12, 0.2] },
   pickup: { name: 'Pickup truck', price: 2800, col: '#b8332a', blurb: '4x4, high and soft. The dog rides in the back', top: 27, off: 17, acc: 11, sand: true, x4: true, k: 38, c: 5.5, soft: 1.15, travel: 0.2, wr: 0.46, ww: 0.34, track: 1.85, wb: 3.0, seat: [0, 1.2, -1.3] },
   rally: { name: 'Rally 4x4', price: 5000, col: '#f2f2f2', blurb: 'Built to race the cane fields. Fast anywhere', top: 40, off: 27, acc: 22, sand: true, x4: true, k: 70, c: 9, soft: 0.85, travel: 0.16, wr: 0.39, ww: 0.3, track: 1.78, wb: 2.6, seat: [0.42, 1.12, 0] },
-  junker: { name: 'Rust Bucket', price: 300, col: '#8a5a3c', drift: true, blurb: 'Your starter. Dented, rusty, bouncy, somehow still runs', top: 24, off: 9, acc: 10, sand: false, x4: false, k: 34, c: 3.6, soft: 1.4, travel: 0.17, wr: 0.33, ww: 0.24, track: 1.6, wb: 2.5, seat: [0.4, 1.05, -0.1] },
+  junker: { name: 'Rust Bucket', price: 300, col: '#8a5a3c', drift: true, blurb: 'Cheap old saloon. Dented, rusty, bouncy, somehow still runs', top: 24, off: 9, acc: 10, sand: false, x4: false, k: 34, c: 3.6, soft: 1.4, travel: 0.17, wr: 0.33, ww: 0.24, track: 1.6, wb: 2.5, seat: [0.4, 1.05, -0.1] },
   offroad: { name: 'Bush Runner', price: 3500, reward: 20000, col: '#56702f', blurb: 'Lifted off-roader. Sand, mud, cane fields: goes anywhere', top: 31, off: 28, acc: 18, sand: true, x4: true, k: 30, c: 4.8, soft: 1.3, travel: 0.3, wr: 0.55, ww: 0.42, track: 2.0, wb: 2.8, seat: [0.45, 1.55, -0.1] },
   ember: { name: 'Ember GT', price: 2400, col: '#ff5a1f', glow: '#ff7a2a', drift: true, blurb: 'Your drift coupe from Helio Drift. Fast on tarmac, Space to slide it, hates sand', top: 38, off: 9, acc: 21, sand: false, x4: false, k: 90, c: 11, soft: 0.6, travel: 0.06, wr: 0.37, ww: 0.3, track: 1.74, wb: 2.84, seat: [0.42, 1.0, -0.2] }
 };
@@ -2648,12 +2648,13 @@ function giveStarterCar() {
   ROADS.forEach(r => r.samples.forEach((p, i) => { const d = Math.hypot(p.x - hx, p.z - hz); if (d < bd && d > 8 && groundH(p.x, p.z) > 0.3 && !solidAt(p.x, p.z, 1.4, 'car')) { bd = d; best = p; const q = r.samples[Math.min(i + 1, r.samples.length - 1)], o = r.samples[Math.max(i - 1, 0)]; yaw = Math.atan2(q.x - o.x, q.z - o.z); } }));
   const x = best ? best.x : hx + 4, z = best ? best.z : hz - 6;
   const u = car.mesh.userData;
-  Object.assign(G.car, { owned: true, model: 'junker', dmg: 22, dents: [[0.5, 0.8, 2.0, -1, 0.2], [-0.6, 0.9, -2.0, 1, 0.16]], tyres: false, x4: false, tune: false, wheel: true, locked: false, stolen: false, keys: true, x, z, yaw });
-  setCarModel('junker'); car.mesh.visible = true; car.mesh.position.set(x, groundH(x, z), z); car.mesh.rotation.y = G.car.yaw;
+  G.gtStart = true;
+  Object.assign(G.car, { owned: true, model: 'ember', dmg: 0, dents: [], tyres: false, x4: false, tune: false, wheel: true, locked: false, stolen: false, keys: true, x, z, yaw });
+  setCarModel('ember'); car.mesh.visible = true; car.mesh.position.set(x, groundH(x, z), z); car.mesh.rotation.y = G.car.yaw;
   // you, standing by the driver's door, looking at the sea
   const sx = x + Math.cos(yaw) * 2.2, sz = z - Math.sin(yaw) * 2.2, side = Math.hypot(sx - hx, sz - hz) < Math.hypot(x - hx, z - hz) ? 1 : -1;
   me.x = x + Math.cos(yaw) * 2.2 * side; me.z = z - Math.sin(yaw) * 2.2 * side; me.yaw = Math.atan2(hx - me.x, hz - me.z); cam.yaw = me.yaw + Math.PI;
-  chat('That\'s your car: the Rust Bucket. Dented, rusty, but it\'s yours. E to get in, Space to drift, E inside to sleep in it. Crash it and it dents, then smokes, then dies.', 'y');
+  chat('That\'s your car: the Ember GT from Helio Drift. E to get in, hold Space to drift, E inside to sleep in it. Crash it and it dents, then smokes, then dies.', 'y');
   chat('Surf rides and drifts earn points. Hit ' + CARS.offroad.reward.toLocaleString() + ' and Moke Motors gives you an off-roader.', 'o');
   save();
 }
@@ -4175,7 +4176,7 @@ const HELP = [
     <li>Walk up the front steps and press <kbd>E</kbd> to go in. Inside, press <kbd>B</kbd> to furnish it. Your stash lives there and nobody can steal from it, and you can sleep safely at night.</li></ol>
     <p><small>Other ways to get a roof: buy one (Oistins $450, Hastings $950, Holetown $1800: cyan squares on the map), or squat in an empty grey house. <kbd>X</kbd> in build mode knocks a piece down.</small></p>`],
   ['car', 'Cars', `<ul>
-    <li>You start on the beach at Freights Bay next to your <b>Rust Bucket</b>. Hold <kbd>Space</kbd> while steering to drift (any car). Press <kbd>E</kbd> inside to sleep in it (any time). Crashes dent it, then it smokes, then black smoke, then the engine dies: Moke Motors fixes and tows. Moke Motors also buys cars for half price.</li>
+    <li>You start on the beach at Freights Bay next to your <b>Ember GT</b>. Hold <kbd>Space</kbd> while steering to drift (any car). Press <kbd>E</kbd> inside to sleep in it (any time). Crashes dent it, then it smokes, then black smoke, then the engine dies: Moke Motors fixes and tows. Moke Motors also buys cars for half price and sells the cheap Rust Bucket.</li>
     <li><b>Points ★</b> come from every surf ride and every drift (crash mid-drift and you lose it). At 20,000 points Moke Motors gives you the <b>Bush Runner</b> off-roader for free. The Ember GT from Helio Drift is on sale there too.</li>
     <li>Fighting: make a <b>wooden club</b> (2 logs) or a <b>spiked club</b> (2 logs, 3 stone) with <kbd>C</kbd>. Hit locals and most will fight back; some run. Knock one down and they may drop cash, but word gets around and thieves come for you that night.</li>
     <li>Moke Motors in Bridgetown (the yellow CARS sign) sells five: Mini Moke $325, Beach buggy $900, Hatchback $1600, Pickup 4x4 $2800, Rally 4x4 $5000.</li>
@@ -6083,6 +6084,17 @@ chat('WASD move · mouse looks (click first) · Shift run · E use · F or click
 if (!G.goals.surf1 && G.started) chat('Freights Bay is just west of your plot. Walk into the sea to paddle out.', 'c');
 if (G.inCar) { me.x = car.mesh.position.x; me.z = car.mesh.position.z; }
 if (G.started && !G.carGift) giveStarterCar();
+// saves that began with the Rust Bucket get the GT swapped in where it's parked; the junker goes on the Moke Motors lot
+if (G.started && !G.gtStart) {
+  G.gtStart = true;
+  const hasGT = G.car.model === 'ember' || G.garage.some(c => c.model === 'ember');
+  if (!hasGT && G.car.owned && G.car.model === 'junker' && !G.car.stolen) {
+    G.garage.push({ model: 'junker', tyres: G.car.tyres, x4: G.car.x4, tune: G.car.tune, wheel: true, dmg: G.car.dmg || 0, dents: G.car.dents || [] });
+    Object.assign(G.car, { model: 'ember', dmg: 0, dents: [], tyres: false, x4: false, tune: false });
+    setCarModel('ember'); car.mesh.rotation.y = G.car.yaw || 0;
+    chat('Your Ember GT is parked where the Rust Bucket was. The old junker is on the lot at Moke Motors.', 'g');
+  }
+}
 dressCar(); $('pts').textContent = (G.pts || 0).toLocaleString();
 if (G.boat.owned) setBoatModel(G.boat.model); else G.inBoat = false;
 if (G.inBoat) { me.x = G.boat.x; me.z = G.boat.z; }
