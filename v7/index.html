@@ -4604,7 +4604,7 @@ function steal(o, t) {
     const ks = Object.keys(G.stash).filter(k => G.stash[k] > 0), k = pick(ks), n = Math.min(G.stash[k], Math.ceil(G.stash[k] / 2), 6);
     G.stash[k] -= n; o.carry = [k, n]; chat('A thief got into your stash and grabbed ' + n + ' ' + ITEMS[k][1].toLowerCase() + '!', 'r');
   } else if (t.kind === 'car') {
-    if (G.car.locked) {   // try the handles, bang on the glass, give up
+    if (G.car.locked || G.inCar) {   // try the handles, bang on the glass, give up. Nobody gets you out while you're sitting in it
       o.triedCar = true; o.stun = 2.5; punchAnim(o.mesh);
       say(o, pick(['It\'s locked!', 'Open up!', 'Come on…', 'Smash the window? Nah.']), 2.5);
       if (G.inCar) chat('A thief yanks at your door handle. Locked. You watch them give up.', 'g'); else if (Math.hypot(car.mesh.position.x - me.x, car.mesh.position.z - me.z) < 60) chat('Someone\'s trying the doors of your Moke. Good thing it\'s locked.', 'o');
@@ -4614,6 +4614,9 @@ function steal(o, t) {
     stealCar(o);
     scene.remove(o.mesh); if (o.sayL) { o.sayL.el.remove(); LBL.splice(LBL.indexOf(o.sayL), 1); } RAIDERS.splice(RAIDERS.indexOf(o), 1);
     return;
+  }
+  else if (t.kind === 'you' && G.inCar) {   // you're in the car: they can't reach your pockets
+    o.triedCar = true; o.stun = 2.5; punchAnim(o.mesh); say(o, pick(['Get out the car!', 'Forget it.', 'Come on…']), 2.5); o.st = 'flee'; return;
   }
   else if (t.kind === 'you') {
     const food = Object.keys(G.inv).filter(k => G.inv[k] > 0 && (FOOD[k] || k === 'wood' || k === 'stone'));
@@ -4669,7 +4672,7 @@ function interactables() {
   RG.interact(out);
   FL.interact(out); XS.interact(out);
   if (G.inCar) { out.push({ d: 0.4, text: G.car.locked ? 'Unlock the doors (L)' : 'Lock the doors (L)', go: () => setLock(!G.car.locked) }); out.push({ d: 0.6, text: 'Sleep in the car' + (G.car.locked ? '' : ' (locks the doors)'), go: () => { G.car.locked = true; sleep('car'); } }); }
-  if (G.inCar) { out.push({ d: 0, text: 'Get out of the car', go: () => { G.inCar = false; me.x = car.mesh.position.x + Math.cos(car.mesh.rotation.y) * 1.8; me.z = car.mesh.position.z - Math.sin(car.mesh.rotation.y) * 1.8; if (!G.car.locked) chat('Don\'t forget to lock it (L), or it might not be here when you get back.', 'o'); save(); } }); return out; }
+  if (G.inCar) { out.unshift({ d: 0, text: 'Get out of the car', go: () => { G.inCar = false; me.x = car.mesh.position.x + Math.cos(car.mesh.rotation.y) * 1.8; me.z = car.mesh.position.z - Math.sin(car.mesh.rotation.y) * 1.8; if (!G.car.locked) chat('Don\'t forget to lock it (L), or it might not be here when you get back.', 'o'); save(); } }); return out; }
   for (const n of NPCS) {
     const d = Math.hypot(n.mesh.position.x - me.x, n.mesh.position.z - me.z); if (d > 3.4) continue;
     if (n.kind === 'shop') out.push({ d, text: 'Talk: ' + n.shop.name, go: () => openShop(n.shop.id) });
@@ -6214,6 +6217,20 @@ const FL = (() => {
   const rwLight = new THREE.InstancedMesh(new THREE.SphereGeometry(0.22, 6, 4), new THREE.MeshBasicMaterial({ color: 0xffe3a0 }), lightPts.length);
   { const mm = new THREE.Matrix4(); lightPts.forEach((p, i) => rwLight.setMatrixAt(i, mm.makeTranslation(...p))); scene.add(rwLight); }
   function rwLocal(r, x, z) { const dx = x - r.a[0], dz = z - r.a[1]; return { u: dx * r.ux + dz * r.uz, v: -dx * r.uz + dz * r.ux }; }
+  const ASSIST_TURN = -1.4;   // banking right (positive) turns the heading down
+  function approach(agl) {   // the runway you're lined up on, if any: { dir, off (m left/right of the centreline) }
+    if (agl > 160) return null;
+    const hd = Math.atan2(_f.x, _f.z);
+    for (const r of RWYS) {
+      const l = rwLocal(r, P.pos.x, P.pos.z);
+      for (const s of [1, -1]) {
+        const dir = Math.atan2(r.ux * s, r.uz * s), along = s > 0 ? -l.u : l.u - r.len, off = l.v * s;
+        if (along < -r.len * 0.85 || along > 1400 || Math.abs(off) > 40 + Math.max(0, along) * 0.15 || Math.abs(wrapA(dir - hd)) > 0.7) continue;
+        return { r, dir, off, along };
+      }
+    }
+    return null;
+  }
   function onRunway(x, z, pad = 1.5) { for (const r of RWYS) { const l = rwLocal(r, x, z); if (l.u > -8 && l.u < r.len + 8 && Math.abs(l.v) < r.w / 2 + pad) return r; } return null; }
 
   // ---------- Airport Key: apron, taxiways, terminal, tower, hangar, windsock ----------
@@ -6454,6 +6471,7 @@ const FL = (() => {
       if (pk.has('c')) camMode = camMode === 'chase' ? 'cockpit' : 'chase';
       if (pk.has('t') && d.smoke) P.smoke = !P.smoke;
       if (pk.has('b')) bail();
+      if (pk.has('l')) { const k = R0(); k.assist = k.assist === false; chat(k.assist === false ? 'Landing assist off. You\'re on your own.' : 'Landing assist on: line up with a runway and come in low, it holds a gentle glide and flares for you.', 'c'); }
     }
     bodyAxes();
     const sp = P.vel.length(), vf = P.vel.dot(_f), vu = P.vel.dot(_u), vr = P.vel.dot(_r);
@@ -6493,6 +6511,20 @@ const FL = (() => {
       wp += -(alpha - aTrim) * vk; wy += beta * vk;
       if (P.stall) { wp -= 0.8; wr += (Math.sin(tick * 2.3) * 1.6 + (P.bank > 0 ? 0.6 : -0.6)) * dt * 8; }
     }
+    // (glide path: 4 degrees down to 30 m past the threshold, then a flare below 5 m)
+    // landing assist: lined up with a runway and low, it levels the wings, holds the centreline and a gentle glide, sets the throttle and flares
+    P.assist = false;
+    if (mode === 'plane' && P.pilot && !P.ground && R0().assist !== false) {
+      const agl = P.pos.y - Math.max(groundH(P.pos.x, P.pos.z), 0) - gearH(0), A = approach(agl), hd = Math.atan2(_f.x, _f.z);
+      if (A || (agl < 7 && P.vel.y < 0)) {
+        P.assist = true;
+        if (!R0().assistTold) { R0().assistTold = true; chat('Landing assist: you\'re lined up, so it steers you down gently and flares. Hold S or W to take over the nose, Space to brake once down. L turns it off.', 'y'); }
+        const wantBank = A && agl > 6 ? clamp(wrapA(A.dir + clamp(A.off * 0.012, -0.45, 0.45) - hd) * ASSIST_TURN, -0.4, 0.4) : 0;
+        if (Math.abs(inp.roll) < 0.1) wr += (wantBank - P.bank) * 3;
+        if (Math.abs(inp.pitch) < 0.1) { const vyT = agl < 5 ? -clamp(agl * 0.35, 0.8, 1.6) : A ? clamp(-fwd * 0.07 + (Math.max(0, A.along + 30) * 0.07 - agl) * 0.25, -4.5, 0.5) : -2; wp += clamp((vyT - P.vel.y) * 0.3, -0.5, 0.6) * clamp(fwd / d.vs, 0.3, 1.5); }
+        if (A && !(keys.Shift || keys[' '] || touch.thrUp || touch.thrDn)) P.thr = agl < 5 ? Math.max(0, P.thr - dt) : clamp(P.thr + (d.vs * (d.jet ? 1.25 : 1.3) - fwd) * dt * 0.25, 0, 1);
+      }
+    }
     _e.set(-wp * dt, -wy * dt, wr * dt, 'XYZ'); P.q.multiply(_dq.setFromEuler(_e)).normalize();
     P.pos.addScaledVector(P.vel, dt);
     P.alpha = alpha;
@@ -6506,7 +6538,8 @@ const FL = (() => {
     const sy = surfY(P.pos.x, P.pos.z), water = groundH(P.pos.x, P.pos.z) < -0.05;
     const pitch = Math.asin(clamp(_f.y, -1, 1)), gh = gearH(Math.max(pitch, 0)) * Math.max(0.2, _u.y);
     // wingtips, nose and trees
-    for (const s of [-1, 1]) { const tx = P.pos.x + _r.x * s * P.o.span, ty = P.pos.y + _r.y * s * P.o.span, tz = P.pos.z + _r.z * s * P.o.span; if (ty < Math.max(groundH(tx, tz), 0) + 0.1 && sp0 > 4) return crash(water ? 'A wingtip catches the water and you cartwheel.' : 'A wingtip digs in. You cartwheel down the ' + (onRunway(tx, tz) ? 'runway.' : 'field.')); }
+    const wup = P.d.jet ? 0.1 : 0.7;   // wings sit above the middle of the plane
+    for (const s of [-1, 1]) { const tx = P.pos.x + _r.x * s * P.o.span + _u.x * wup, ty = P.pos.y + _r.y * s * P.o.span + _u.y * wup, tz = P.pos.z + _r.z * s * P.o.span + _u.z * wup; if (ty < Math.max(groundH(tx, tz), 0) - 0.25 && sp0 > 4) return crash(water ? 'A wingtip catches the water and you cartwheel.' : 'A wingtip digs in. You cartwheel down the ' + (onRunway(tx, tz) ? 'runway.' : 'field.')); }
     const nx = P.pos.x + _f.x * 3, ny = P.pos.y + _f.y * 3, nz = P.pos.z + _f.z * 3; if (ny < Math.max(groundH(nx, nz), 0) - 0.3 && sp0 > 6) return crash(water ? 'You nose into the sea.' : 'You fly straight into the ground.');
     if (P.pos.y - sy < 7.5 && sp0 > 3) { const h = solidAt(P.pos.x, P.pos.z, 1.6, 'plane'); if (h && !h.water) return crash(h.block ? 'You plough into a building.' : 'You clip a tree and spin in.'); }
     if (P.pos.y - gh > sy + 0.02) { if (P.ground) { P.ground = false; P.air = 0; } P.air += dt; return; }
@@ -6514,12 +6547,13 @@ const FL = (() => {
     if (!P.ground) {
       const sink = -P.vel.y, bank = Math.abs(P.bank), rw = onRunway(P.pos.x, P.pos.z), slope = Math.abs(groundH(P.pos.x + 3, P.pos.z) - groundH(P.pos.x - 3, P.pos.z)) / 6 + Math.abs(groundH(P.pos.x, P.pos.z + 3) - groundH(P.pos.x, P.pos.z - 3)) / 6;
       if (water && !d.float) return crash(sp0 < 12 ? 'You ditch in the sea. The plane fills with water and sinks.' : 'You hit the water hard and flip over.', sp0 < 12);
-      if (sink > d.crash) return crash('You slam into the ' + (water ? 'water' : 'ground') + ' at ' + sink.toFixed(1) + ' m/s down. Too hard!');
-      if (bank > 0.55) return crash('Landed on one wing. Level the wings before you touch down.');
-      if (pitch < -0.16) return crash('Nose first. You need to flare: ease S back just before touchdown.');
+      if (sink > d.crash * 1.35) return crash('You slam into the ' + (water ? 'water' : 'ground') + ' at ' + sink.toFixed(1) + ' m/s down. Too hard!');
+      if (bank > 0.75) return crash('Landed on one wing. Level the wings before you touch down.');
+      if (pitch < -0.32 || (pitch < -0.16 && sink > 3)) return crash('Nose first. You need to flare: ease S back just before touchdown.');
       if (!water && !rw && slope > 0.22) return crash('Too rough and steep to land here. Find a runway or a flat field.');
       if (!water && !rw && !d.rough && sp0 > 22) return crash('The jet\'s little wheels hit the rough ground and fold. Jets need a runway.');
       if (P.air > 1.5 && P.pilot) touchdown(sink, rw, water);
+      P.autoBrake = P.assist && !!rw;
       if (!P.pilot) { P.thr = 0; P.vel.multiplyScalar(0.3); }
       P.ground = true;
     }
@@ -6528,7 +6562,8 @@ const FL = (() => {
     const yaw = Math.atan2(_f.x, _f.z), hx = Math.sin(yaw), hz = Math.cos(yaw);
     let vf = P.vel.x * hx + P.vel.z * hz, vs = -P.vel.x * hz + P.vel.z * hx;
     vs *= Math.exp(-dt * (water ? 2.5 : 9));
-    const rough = !water && !onRunway(P.pos.x, P.pos.z), brake = mode === 'plane' && P.thr < 0.02 && (keys[' '] || touch.thrDn) ? 5 : 0;
+    const rough = !water && !onRunway(P.pos.x, P.pos.z); let brake = mode === 'plane' && P.thr < 0.02 && (keys[' '] || touch.thrDn) ? 5 : 0;
+    if (P.autoBrake && mode === 'plane') { if (keys.Shift || touch.thrUp) P.autoBrake = false; else { P.thr = 0; brake = 4; } }   // landing assist rolls you to a stop
     const roll = water ? 0.06 * vf * vf / 10 + 0.3 : rough ? 0.9 : 0.25;
     const dec = (roll + brake) * dt; vf = Math.abs(vf) <= dec ? 0 : vf - Math.sign(vf) * dec;
     P.vel.x = hx * vf - hz * vs; P.vel.z = hz * vf + hx * vs;
@@ -6786,6 +6821,7 @@ const FL = (() => {
       <li><b>Turn:</b> bank with A/D, then pull back a little with S. Bank too far and you lose height.</li>
       <li><b>Stall:</b> too slow and too nose-high and the wing stops lifting (the horn beeps, STALL flashes). Push the nose down to get speed back.</li>
       <li><b>Land:</b> line up from far out, throttle back, flaps down (<kbd>F</kbd>), aim at the yellow line near the start of the runway, and just before the wheels touch, ease S back to flare. Come down gently and with your wings level. Too hard, banked or nose-first and you crash.</li>
+      <li><b>Landing assist</b> (on by default, <kbd>L</kbd> toggles): line up with a runway, come in low and let go. It levels the wings, holds the centreline and a gentle glide, sets the throttle, flares and brakes. Hold S or W to fly the nose yourself.</li>
       <li><kbd>C</kbd> cockpit/chase camera. Drag the mouse to look around. <kbd>B</kbd> jump out with a parachute (above 40 m). <kbd>E</kbd> get out once stopped. Jets: <kbd>G</kbd> gear. Biplane: <kbd>T</kbd> smoke.</li>
       <li>Big cyan rings with a light beam start <b>ring courses</b>: fly through to begin. Land on every runway for the island stamps, and jump for the bullseye targets.</li>
       <li><kbd>M</kbd> shows the whole ocean. Click it to set a waypoint.</li></ul><div class="foot"><button class="btn" id="fhClose">Got it</button></div>`, box => box.querySelector('#fhClose').addEventListener('click', closeModal));
@@ -6920,7 +6956,8 @@ body.touch #flT{display:flex}#flT{display:none;position:fixed;right:max(104px,en
       else if (fl && !P.ground && alt < 60 && P.vel.y < -7) w = 'PULL UP';
       else if (fl && P.ground && P.thr > 0.5 && P.vel.length() > P.d.vs * 1.15 && tick % 2 < 1) w = '';
       else if (sky && !SK.chute && alt < 300) w = 'OPEN CANOPY - SPACE';
-      $('flWarn').hidden = !w; if (w) setT('flWarn', w);
+      else if (fl && P.assist) w = 'LANDING ASSIST';
+      $('flWarn').hidden = !w; if (w) { setT('flWarn', w); const calm = w === 'LANDING ASSIST'; $('flWarn').style.color = calm ? '#7fe8ff' : ''; $('flWarn').style.fontSize = calm ? '16px' : ''; $('flWarn').style.animation = calm ? 'none' : ''; $('flWarn').style.top = calm ? '24%' : ''; }
     } else $('flWarn').hidden = true;
     if (course) { $('flCourse').hidden = false; $('flCourse').innerHTML = course.c.name + '<br><b>' + fmtT(course.t) + '</b> ring ' + course.i + '/' + (course.c.ring.length - 1) + '<br><span style="font-size:10px;color:#ffd27a">gold ' + fmtT(course.c.gold) + '</span>'; }
     else if (hop) { $('flCourse').hidden = false; $('flCourse').innerHTML = 'Island Hop<br><b>' + fmtT(hop.t) + '</b> ' + hop.done.length + '/' + RWYS.length + ' runways'; }
